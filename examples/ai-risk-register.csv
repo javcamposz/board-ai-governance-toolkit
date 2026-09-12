@@ -1,0 +1,5 @@
+id,system,owner,decision,impact,likelihood,control_strength,status,next_review
+AI-001,Customer support assistant,Customer Operations Director,Approve expansion beyond answer drafting,high,possible,partial,mitigating,2026-09-01
+AI-002,Recruitment ranking pilot,Chief People Officer,Decide whether the pilot has sufficient fairness evidence,critical,likely,strong,open,2026-10-15
+AI-003,Developer coding assistant,Chief Technology Officer,Set the permitted autonomy boundary,medium,likely,strong,accepted,2026-11-30
+AI-004,Fraud triage model,Chief Risk Officer,Confirm monitoring thresholds before renewal,high,rare,strong,closed,2026-08-31
