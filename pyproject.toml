@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "board-ai-governance-toolkit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Validate an AI risk register, score it against its assurance, and report to the board"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -16,13 +16,23 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
 ai-board = "board_ai_governance.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+board_ai_governance = ["py.typed"]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

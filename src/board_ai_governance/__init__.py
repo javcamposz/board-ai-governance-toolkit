@@ -2,10 +2,11 @@
 
 from .diff import RegisterDiff, RiskChange, diff_registers, render_diff
 from .policy import Policy, Result, breached, evaluate
-from .register import RegisterError, Risk, read_register, render_dashboard
+from .register import Portfolio, RegisterError, Risk, read_register, render_dashboard
 
 __all__ = [
     "Policy",
+    "Portfolio",
     "RegisterDiff",
     "RegisterError",
     "Result",

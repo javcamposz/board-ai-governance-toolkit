@@ -21,11 +21,12 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[dev]'
+      - run: ruff check .
       - run: pytest
       - run: ai-board summarize examples/ai-risk-register.csv --as-of 2026-09-12 --output board-summary.md
       - run: ai-board summarize templates/ai-risk-register.csv --as-of 2026-09-12 --output /dev/null
       - run: ai-board diff examples/ai-risk-register-previous.csv examples/ai-risk-register.csv --as-of 2026-09-12 --output change-report.md
-      - run: ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-critical 1 --max-overdue 1
+      - run: ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-critical 1 --max-overdue 1 --max-open-days 400
       - name: check fails on a breached threshold
         run: |
           if ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-critical 0; then

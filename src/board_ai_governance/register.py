@@ -16,7 +16,7 @@ REQUIRED_FIELDS = (
     "status",
     "next_review",
 )
-OPTIONAL_FIELDS = ("assurance", "evidence")
+OPTIONAL_FIELDS = ("assurance", "evidence", "date_opened")
 # Spreadsheet habits that mean "no evidence". Accepting them as a reference would let one
 # keystroke buy the full assurance credit, so the register is asked to leave the cell blank.
 NULL_EVIDENCE = {"n/a", "n.a.", "na", "none", "nil", "tbd", "tbc", "pending", "unknown", "-", "--", "?"}
@@ -55,6 +55,13 @@ class Risk:
     next_review: date
     assurance: str = NO_ASSURANCE
     evidence: str = ""
+    date_opened: date | None = None
+
+    def age_days(self, as_of: date) -> int | None:
+        """How long the risk has been on the register, when the register says."""
+        if self.date_opened is None:
+            return None
+        return (as_of - self.date_opened).days
 
     @property
     def is_evidenced(self) -> bool:
@@ -165,6 +172,17 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
     assurance: str | None = NO_ASSURANCE
     if raw_assurance:
         assurance = _choice(row_number, "assurance", raw_assurance, ASSURANCE_CREDIT, problems)
+    # date_opened is optional, so an absent value is not a problem but an unreadable one is.
+    raw_opened = (row.get("date_opened") or "").strip()
+    opened: date | None = None
+    opened_is_unreadable = False
+    if raw_opened:
+        try:
+            opened = date.fromisoformat(raw_opened)
+        except ValueError:
+            problems.append(f"row {row_number}: date_opened must be YYYY-MM-DD")
+            opened_is_unreadable = True
+
     evidence = (row.get("evidence") or "").strip()
     if evidence.lower() in NULL_EVIDENCE:
         problems.append(
@@ -172,7 +190,8 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
         )
         evidence = None
 
-    if None in (risk_id, system, owner, decision, impact, likelihood, control, status, review, assurance, evidence):
+    fields = (risk_id, system, owner, decision, impact, likelihood, control, status, review, assurance, evidence)
+    if None in fields or opened_is_unreadable:
         return None
     return Risk(
         id=risk_id,
@@ -186,6 +205,7 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
         next_review=review,
         assurance=assurance,
         evidence=evidence,
+        date_opened=opened,
     )
 
 
@@ -214,20 +234,79 @@ def read_register(path: Path) -> list[Risk]:
     return risks
 
 
+@dataclass(frozen=True)
+class Portfolio:
+    """The numbers the board is given, counted once so two reports cannot disagree."""
+
+    as_of: date
+    risks: tuple[Risk, ...]
+
+    @property
+    def active(self) -> tuple[Risk, ...]:
+        return tuple(risk for risk in self.risks if risk.is_active)
+
+    @property
+    def ranked(self) -> tuple[Risk, ...]:
+        return tuple(sorted(self.active, key=lambda risk: (-risk.score, risk.id)))
+
+    @property
+    def overdue(self) -> tuple[Risk, ...]:
+        return tuple(sorted(
+            (risk for risk in self.active if risk.next_review < self.as_of),
+            key=lambda risk: (risk.next_review, risk.id),
+        ))
+
+    @property
+    def elevated(self) -> tuple[Risk, ...]:
+        return tuple(risk for risk in self.active if risk.level in {"high", "critical"})
+
+    @property
+    def unevidenced(self) -> tuple[Risk, ...]:
+        return tuple(risk for risk in self.active if not risk.is_evidenced)
+
+    @property
+    def discounted(self) -> tuple[Risk, ...]:
+        return tuple(sorted(
+            (risk for risk in self.active if risk.comfort_gap > 0),
+            key=lambda risk: (-risk.comfort_gap, risk.id),
+        ))
+
+    @property
+    def aged(self) -> tuple[Risk, ...]:
+        """Active risks that record when they were opened, oldest first."""
+        return tuple(sorted(
+            (risk for risk in self.active if risk.date_opened is not None),
+            key=lambda risk: (risk.date_opened, risk.id),
+        ))
+
+    @property
+    def undated(self) -> tuple[Risk, ...]:
+        return tuple(risk for risk in self.active if risk.date_opened is None)
+
+    @property
+    def records_no_assurance(self) -> bool:
+        return bool(self.active) and not any(
+            risk.is_evidenced or risk.assurance != NO_ASSURANCE for risk in self.active
+        )
+
+    @property
+    def level_counts(self) -> dict[str, int]:
+        return {
+            level: sum(risk.level == level for risk in self.active)
+            for level in ("critical", "high", "medium", "low")
+        }
+
+
 def render_dashboard(risks: list[Risk], as_of: date) -> str:
-    active = [risk for risk in risks if risk.is_active]
-    ranked = sorted(active, key=lambda risk: (-risk.score, risk.id))
-    overdue = [risk for risk in active if risk.next_review < as_of]
-    elevated = [risk for risk in active if risk.level in {"high", "critical"}]
-    unevidenced = [risk for risk in active if not risk.is_evidenced]
-    discounted = sorted(
-        (risk for risk in active if risk.comfort_gap > 0),
-        key=lambda risk: (-risk.comfort_gap, risk.id),
-    )
-    records_no_assurance = bool(active) and not any(
-        risk.is_evidenced or risk.assurance != NO_ASSURANCE for risk in active
-    )
-    level_counts = {level: sum(risk.level == level for risk in active) for level in ("critical", "high", "medium", "low")}
+    portfolio = Portfolio(as_of=as_of, risks=tuple(risks))
+    active = portfolio.active
+    ranked = portfolio.ranked
+    overdue = portfolio.overdue
+    elevated = portfolio.elevated
+    unevidenced = portfolio.unevidenced
+    discounted = portfolio.discounted
+    records_no_assurance = portfolio.records_no_assurance
+    level_counts = portfolio.level_counts
 
     lines = [
         "# Board AI Risk Dashboard",
@@ -241,7 +320,8 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         f"- High or critical active risks: {len(elevated)}",
         f"- Overdue reviews: {len(overdue)}",
         f"- Controls with no evidence recorded: {len(unevidenced)}",
-        f"- Distribution: {level_counts['critical']} critical, {level_counts['high']} high, {level_counts['medium']} medium, {level_counts['low']} low",
+        f"- Distribution: {level_counts['critical']} critical, {level_counts['high']} high, "
+        f"{level_counts['medium']} medium, {level_counts['low']} low",
         "",
         "## Priority Risks",
         "",
@@ -249,7 +329,10 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         "|---|---|---|---|---:|---|---|",
     ]
     for risk in ranked[:10]:
-        lines.append(f"| {risk.id} | {risk.system} | {risk.owner} | {risk.level.title()} | {risk.score:.1f} | {risk.status} | {risk.next_review.isoformat()} |")
+        lines.append(
+            f"| {risk.id} | {risk.system} | {risk.owner} | {risk.level.title()} | "
+            f"{risk.score:.1f} | {risk.status} | {risk.next_review.isoformat()} |"
+        )
     if len(ranked) > 10:
         lines.append("")
         lines.append(f"{len(ranked) - 10} further active risks are not shown; the full register remains the record.")
@@ -257,7 +340,10 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
     lines.extend(["", "## Decisions Required", ""])
     if elevated:
         for risk in elevated:
-            lines.append(f"- **{risk.id} / {risk.system}:** {risk.decision.rstrip('.')}. Accountable owner: {risk.owner}.")
+            lines.append(
+                f"- **{risk.id} / {risk.system}:** {risk.decision.rstrip('.')}. "
+                f"Accountable owner: {risk.owner}."
+            )
     else:
         lines.append("- No high or critical active risk is recorded; challenge whether the register is complete.")
 
@@ -292,16 +378,40 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
 
     lines.extend(["", "## Overdue Reviews", ""])
     if overdue:
-        for risk in sorted(overdue, key=lambda item: (item.next_review, item.id)):
+        for risk in overdue:
             lines.append(f"- **{risk.id}** was due {risk.next_review.isoformat()} ({risk.owner}).")
     else:
         lines.append("- None.")
+
+    lines.extend(["", "## Ageing", ""])
+    aged = portfolio.aged
+    if aged:
+        lines.append("| ID | System | Opened | Days open | Status | Level |")
+        lines.append("|---|---|---|---:|---|---|")
+        for risk in aged[:10]:
+            lines.append(
+                f"| {risk.id} | {risk.system} | {risk.date_opened.isoformat()} | "
+                f"{risk.age_days(as_of)} | {risk.status} | {risk.level.title()} |"
+            )
+        if len(aged) > 10:
+            lines.append("")
+            lines.append(f"{len(aged) - 10} further dated active risks are not shown.")
+    if portfolio.undated:
+        if aged:
+            lines.append("")
+        lines.append(
+            f"{len(portfolio.undated)} active risks record no opening date, so how long the "
+            "organization has carried them cannot be reported."
+        )
+    if not aged and not portfolio.undated:
+        lines.append("- No active risk to age.")
 
     lines.extend([
         "",
         "## Board Challenge",
         "",
-        "Confirm that each material AI decision has a named owner, current evidence, a reversible response where feasible, and an escalation path proportionate to its consequences.",
+        "Confirm that each material AI decision has a named owner, current evidence, a reversible "
+        "response where feasible, and an escalation path proportionate to its consequences.",
         "",
     ])
     return "\n".join(lines)

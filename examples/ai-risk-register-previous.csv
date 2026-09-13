@@ -1,5 +1,5 @@
-id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence
-AI-001,Customer support assistant,Chief Operating Officer,Approve expansion beyond answer drafting,high,possible,weak,open,2026-06-30,asserted,
-AI-002,Recruitment ranking pilot,Chief People Officer,Decide whether the pilot has sufficient fairness evidence,critical,possible,strong,open,2026-07-15,tested,evidence/ai-002-supplier-fairness-claim.md
-AI-004,Fraud triage model,Chief Risk Officer,Confirm monitoring thresholds before renewal,high,rare,strong,open,2026-08-31,independent,evidence/ai-004-model-risk-2026-07.md
-AI-005,Supplier contract summarisation,General Counsel,Approve use on binding contract terms,medium,possible,partial,open,2026-08-15,asserted,
+id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence,date_opened
+AI-001,Customer support assistant,Chief Operating Officer,Approve expansion beyond answer drafting,high,possible,weak,open,2026-06-30,asserted,,2025-11-10
+AI-002,Recruitment ranking pilot,Chief People Officer,Decide whether the pilot has sufficient fairness evidence,critical,possible,strong,open,2026-07-15,tested,evidence/ai-002-supplier-fairness-claim.md,2026-04-02
+AI-004,Fraud triage model,Chief Risk Officer,Confirm monitoring thresholds before renewal,high,rare,strong,open,2026-08-31,independent,evidence/ai-004-model-risk-2026-07.md,2025-06-01
+AI-005,Supplier contract summarisation,General Counsel,Approve use on binding contract terms,medium,possible,partial,open,2026-08-15,asserted,,2026-01-08

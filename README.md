@@ -68,6 +68,9 @@ FAIL  evidence: 1 high, critical risks with no evidence recorded
 Thresholds are opt-in, because risk appetite belongs to the organization and not to this tool. With no
 threshold set, `check` validates the register and tests nothing. Closed risks are out of scope.
 
+`--require-evidence-for` matches a risk whose reported **or** face-value level is in the set, so a risk
+cannot escape the rule by being inflated past the level under test precisely because it lacks evidence.
+
 ## Exit Codes
 
 | Code | Meaning |
@@ -111,9 +114,17 @@ error: register.csv: 3 problems
 | `next_review` | ISO date (`YYYY-MM-DD`) |
 | `assurance` | Optional. `asserted`, `tested`, or `independent`: who verified the control rating |
 | `evidence` | Optional. Reference to the evidence behind the rating, such as a memo or review |
+| `date_opened` | Optional. ISO date the risk joined the register |
 
-A register without the two optional columns still loads. Every risk in it is read as `asserted` with no
-evidence, which is the pessimistic reading and usually the accurate one.
+A register without the optional columns still loads. Every risk in it is read as `asserted` with no
+evidence, which is the pessimistic reading and usually the accurate one, and its age is not reported.
+
+## How Long Has This Been Open
+
+A risk that has sat in `mitigating` for eighteen months is not being mitigated. With `date_opened`
+recorded, the dashboard ages the active register oldest first, and `check --max-open-days` fails when a
+risk has been carried longer than the organization said it would tolerate. Risks with no opening date are
+counted and named as untestable rather than quietly passed.
 
 ## Why A Control Rating Is Not Taken On Trust
 
@@ -155,6 +166,7 @@ pytest
 python -m board_ai_governance summarize examples/ai-risk-register.csv --as-of 2026-09-12
 python -m board_ai_governance diff examples/ai-risk-register-previous.csv examples/ai-risk-register.csv --as-of 2026-09-12
 python -m board_ai_governance check examples/ai-risk-register.csv --as-of 2026-09-12 --max-overdue 0
+ruff check .
 ```
 
 ## Responsible Use

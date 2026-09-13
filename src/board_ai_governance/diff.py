@@ -19,6 +19,7 @@ TRACKED_FIELDS = (
     "next_review",
     "assurance",
     "evidence",
+    "date_opened",
 )
 
 
@@ -126,6 +127,8 @@ class RegisterDiff:
 
 def _field_value(risk: Risk, field: str) -> str:
     value = getattr(risk, field)
+    if value is None:
+        return "not recorded"
     return value.isoformat() if isinstance(value, date) else str(value)
 
 
@@ -253,7 +256,9 @@ def render_diff(diff: RegisterDiff) -> str:
         challenges.append(
             f"- **{change.id} / {change.after.system}** was closed and is active again as {change.after.status}."
         )
-    lines.extend(challenges or ["- Nothing in this comparison requires explanation; challenge whether the register is current."])
+    lines.extend(challenges or [
+        "- Nothing in this comparison requires explanation; challenge whether the register is current."
+    ])
 
     lines.extend(["", "## Movement", ""])
     movement = sorted(
