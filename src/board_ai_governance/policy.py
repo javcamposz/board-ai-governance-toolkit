@@ -89,16 +89,21 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
         ))
 
     if policy.max_open_days is not None:
-        dated = [risk for risk in active if risk.date_opened is not None]
+        # A risk dated after the reporting date has no meaningful age, so it is untestable
+        # rather than compliant. Counting it as a pass would let a wrong date clear the gate.
+        ages = {risk.id: risk.age_days(as_of) for risk in active}
+        testable = [risk for risk in active if (ages[risk.id] or 0) >= 0 and risk.date_opened]
         matched = sorted(
-            (risk for risk in dated if (risk.age_days(as_of) or 0) > policy.max_open_days),
+            (risk for risk in testable if ages[risk.id] > policy.max_open_days),
             key=lambda risk: (risk.date_opened, risk.id),
         )
-        undated = len(active) - len(dated)
+        untestable = len(active) - len(testable)
         noun = "risk" if len(matched) == 1 else "risks"
         detail = f"{len(matched)} {noun} open longer than {policy.max_open_days} days"
-        if undated:
-            detail += f"; {undated} record no opening date and could not be tested"
+        if untestable:
+            detail += (
+                f"; {untestable} record no usable opening date and could not be tested"
+            )
         results.append(Result(
             rule="risk age",
             passed=not matched,
