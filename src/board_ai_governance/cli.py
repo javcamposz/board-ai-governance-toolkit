@@ -6,9 +6,11 @@ from datetime import date
 from pathlib import Path
 
 from .diff import diff_registers, render_diff
+from .policy import LEVELS, Policy, breached, evaluate
 from .register import RegisterError, read_register, render_dashboard
 
 EXIT_OK = 0
+EXIT_POLICY_BREACH = 1
 EXIT_INPUT_ERROR = 2
 
 
@@ -29,8 +31,47 @@ def _summarize(args: argparse.Namespace) -> int:
     print(f"Validated {len(risks)} AI risks")
     print(f"High or critical open risks: {elevated}")
     print(f"Overdue reviews: {overdue}")
+    print(f"Controls with no evidence recorded: {sum(not risk.is_evidenced for risk in active)}")
     if args.output:
         print(f"Dashboard written to {args.output}")
+    return EXIT_OK
+
+
+def _levels(value: str) -> frozenset[str]:
+    chosen = {level.strip().lower() for level in value.split(",") if level.strip()}
+    unknown = sorted(chosen - set(LEVELS))
+    if unknown:
+        raise argparse.ArgumentTypeError(f"unknown level(s): {', '.join(unknown)}; choose from {', '.join(LEVELS)}")
+    return frozenset(chosen)
+
+
+def _check(args: argparse.Namespace) -> int:
+    risks = read_register(args.input)
+    policy = Policy(
+        max_critical=args.max_critical,
+        max_high=args.max_high,
+        max_overdue=args.max_overdue,
+        require_evidence_for=args.require_evidence_for or frozenset(),
+    )
+    results = evaluate(risks, policy, args.as_of)
+
+    print(f"Validated {len(risks)} AI risks as of {args.as_of.isoformat()}")
+    if policy.is_empty:
+        print("No thresholds were set, so nothing was tested. Pass --max-critical, --max-high, "
+              "--max-overdue, or --require-evidence-for to enforce a policy.")
+        return EXIT_OK
+
+    for result in results:
+        print(result)
+        if not result.passed:
+            for subject in result.subjects:
+                print(f"        {subject}")
+
+    failures = breached(results)
+    if failures:
+        print(f"{len(failures)} of {len(results)} rules breached")
+        return EXIT_POLICY_BREACH
+    print(f"All {len(results)} rules satisfied")
     return EXIT_OK
 
 
@@ -65,6 +106,20 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--as-of", type=date.fromisoformat, default=date.today())
     compare.add_argument("--output", type=Path)
     compare.set_defaults(handler=_diff)
+
+    check = subparsers.add_parser("check", help="test a register against governance thresholds")
+    check.add_argument("input", type=Path)
+    check.add_argument("--as-of", type=date.fromisoformat, default=date.today())
+    check.add_argument("--max-critical", type=int, help="maximum active critical risks")
+    check.add_argument("--max-high", type=int, help="maximum active high risks")
+    check.add_argument("--max-overdue", type=int, help="maximum active risks past their review date")
+    check.add_argument(
+        "--require-evidence-for",
+        type=_levels,
+        metavar="LEVELS",
+        help="comma-separated levels that must record evidence, for example high,critical",
+    )
+    check.set_defaults(handler=_check)
 
     return parser
 

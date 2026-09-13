@@ -16,10 +16,16 @@ REQUIRED_FIELDS = (
     "status",
     "next_review",
 )
+OPTIONAL_FIELDS = ("assurance", "evidence")
 IMPACT = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 LIKELIHOOD = {"rare": 1, "possible": 2, "likely": 3, "almost_certain": 4}
 CONTROL_FACTOR = {"weak": 1.0, "partial": 0.65, "strong": 0.35}
 STATUSES = {"open", "mitigating", "accepted", "closed"}
+
+# How much of a control rating the board is entitled to credit, by who verified it.
+# An assertion is not nothing, but it is not a tested control either.
+ASSURANCE_CREDIT = {"asserted": 0.4, "tested": 0.75, "independent": 1.0}
+NO_ASSURANCE = "asserted"
 
 
 class RegisterError(ValueError):
@@ -44,20 +50,61 @@ class Risk:
     control_strength: str
     status: str
     next_review: date
+    assurance: str = NO_ASSURANCE
+    evidence: str = ""
+
+    @property
+    def is_evidenced(self) -> bool:
+        return bool(self.evidence)
+
+    @property
+    def effective_assurance(self) -> str:
+        """Verification you cannot point at is an assertion."""
+        if self.assurance != NO_ASSURANCE and not self.is_evidenced:
+            return NO_ASSURANCE
+        return self.assurance
+
+    @property
+    def is_unevidenced_claim(self) -> bool:
+        return self.assurance != NO_ASSURANCE and not self.is_evidenced
+
+    @property
+    def control_factor(self) -> float:
+        """Credit the control rating only as far as its assurance carries it."""
+        credited = CONTROL_FACTOR[self.control_strength]
+        return 1.0 - (1.0 - credited) * ASSURANCE_CREDIT[self.effective_assurance]
 
     @property
     def score(self) -> float:
+        return round(IMPACT[self.impact] * LIKELIHOOD[self.likelihood] * self.control_factor, 1)
+
+    @property
+    def face_value_score(self) -> float:
+        """What the register would report if the control rating were taken on trust."""
         return round(IMPACT[self.impact] * LIKELIHOOD[self.likelihood] * CONTROL_FACTOR[self.control_strength], 1)
+
+    @staticmethod
+    def level_of(score: float) -> str:
+        if score >= 8:
+            return "critical"
+        if score >= 4:
+            return "high"
+        if score >= 2:
+            return "medium"
+        return "low"
 
     @property
     def level(self) -> str:
-        if self.score >= 8:
-            return "critical"
-        if self.score >= 4:
-            return "high"
-        if self.score >= 2:
-            return "medium"
-        return "low"
+        return self.level_of(self.score)
+
+    @property
+    def face_value_level(self) -> str:
+        return self.level_of(self.face_value_score)
+
+    @property
+    def comfort_gap(self) -> float:
+        """Exposure that a face-value reading of the controls would have hidden."""
+        return round(self.score - self.face_value_score, 1)
 
     @property
     def is_active(self) -> bool:
@@ -110,7 +157,14 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
     except ValueError:
         problems.append(f"row {row_number}: next_review must be YYYY-MM-DD")
 
-    if None in (risk_id, system, owner, decision, impact, likelihood, control, status, review):
+    # Absent or blank assurance is read as an assertion, never as verification.
+    raw_assurance = (row.get("assurance") or "").strip()
+    assurance: str | None = NO_ASSURANCE
+    if raw_assurance:
+        assurance = _choice(row_number, "assurance", raw_assurance, ASSURANCE_CREDIT, problems)
+    evidence = (row.get("evidence") or "").strip()
+
+    if None in (risk_id, system, owner, decision, impact, likelihood, control, status, review, assurance):
         return None
     return Risk(
         id=risk_id,
@@ -122,6 +176,8 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
         control_strength=control,
         status=status,
         next_review=review,
+        assurance=assurance,
+        evidence=evidence,
     )
 
 
@@ -155,6 +211,11 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
     ranked = sorted(active, key=lambda risk: (-risk.score, risk.id))
     overdue = [risk for risk in active if risk.next_review < as_of]
     elevated = [risk for risk in active if risk.level in {"high", "critical"}]
+    unevidenced = [risk for risk in active if not risk.is_evidenced]
+    discounted = sorted(
+        (risk for risk in active if risk.comfort_gap > 0),
+        key=lambda risk: (-risk.comfort_gap, risk.id),
+    )
     level_counts = {level: sum(risk.level == level for risk in active) for level in ("critical", "high", "medium", "low")}
 
     lines = [
@@ -168,6 +229,7 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         f"- Active risks: {len(active)}",
         f"- High or critical active risks: {len(elevated)}",
         f"- Overdue reviews: {len(overdue)}",
+        f"- Controls with no evidence recorded: {len(unevidenced)}",
         f"- Distribution: {level_counts['critical']} critical, {level_counts['high']} high, {level_counts['medium']} medium, {level_counts['low']} low",
         "",
         "## Priority Risks",
@@ -187,6 +249,28 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
             lines.append(f"- **{risk.id} / {risk.system}:** {risk.decision.rstrip('.')}. Accountable owner: {risk.owner}.")
     else:
         lines.append("- No high or critical active risk is recorded; challenge whether the register is complete.")
+
+    lines.extend(["", "## Comfort Without Evidence", ""])
+    if discounted:
+        lines.append(
+            "These controls are credited below their stated strength because the verification behind "
+            "them is asserted rather than evidenced. The face-value column is what the register would "
+            "have reported on trust."
+        )
+        lines.append("")
+        lines.append("| ID | System | Control | Assurance | Evidence | Reported | On trust |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for risk in discounted:
+            claim = risk.assurance
+            if risk.is_unevidenced_claim:
+                claim = f"{risk.assurance} (unevidenced)"
+            lines.append(
+                f"| {risk.id} | {risk.system} | {risk.control_strength} | {claim} | "
+                f"{risk.evidence or 'None'} | {risk.level.title()} {risk.score:.1f} | "
+                f"{risk.face_value_level.title()} {risk.face_value_score:.1f} |"
+            )
+    else:
+        lines.append("- Every active control is credited in full; its assurance is evidenced.")
 
     lines.extend(["", "## Overdue Reviews", ""])
     if overdue:
