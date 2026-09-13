@@ -17,6 +17,9 @@ REQUIRED_FIELDS = (
     "next_review",
 )
 OPTIONAL_FIELDS = ("assurance", "evidence")
+# Spreadsheet habits that mean "no evidence". Accepting them as a reference would let one
+# keystroke buy the full assurance credit, so the register is asked to leave the cell blank.
+NULL_EVIDENCE = {"n/a", "n.a.", "na", "none", "nil", "tbd", "tbc", "pending", "unknown", "-", "--", "?"}
 IMPACT = {"low": 1, "medium": 2, "high": 3, "critical": 4}
 LIKELIHOOD = {"rare": 1, "possible": 2, "likely": 3, "almost_certain": 4}
 CONTROL_FACTOR = {"weak": 1.0, "partial": 0.65, "strong": 0.35}
@@ -163,8 +166,13 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
     if raw_assurance:
         assurance = _choice(row_number, "assurance", raw_assurance, ASSURANCE_CREDIT, problems)
     evidence = (row.get("evidence") or "").strip()
+    if evidence.lower() in NULL_EVIDENCE:
+        problems.append(
+            f"row {row_number}: evidence must name the evidence or be left blank, not {evidence!r}"
+        )
+        evidence = None
 
-    if None in (risk_id, system, owner, decision, impact, likelihood, control, status, review, assurance):
+    if None in (risk_id, system, owner, decision, impact, likelihood, control, status, review, assurance, evidence):
         return None
     return Risk(
         id=risk_id,
@@ -216,6 +224,9 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         (risk for risk in active if risk.comfort_gap > 0),
         key=lambda risk: (-risk.comfort_gap, risk.id),
     )
+    records_no_assurance = bool(active) and not any(
+        risk.is_evidenced or risk.assurance != NO_ASSURANCE for risk in active
+    )
     level_counts = {level: sum(risk.level == level for risk in active) for level in ("critical", "high", "medium", "low")}
 
     lines = [
@@ -251,6 +262,13 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         lines.append("- No high or critical active risk is recorded; challenge whether the register is complete.")
 
     lines.extend(["", "## Comfort Without Evidence", ""])
+    if records_no_assurance:
+        lines.append(
+            "This register records no assurance and no evidence, so every control is credited as "
+            "asserted. The scores below are the most pessimistic reading available; recording who "
+            "verified each control, and where the evidence sits, is what makes them sharper."
+        )
+        lines.append("")
     if discounted:
         lines.append(
             "These controls are credited below their stated strength because the verification behind "
@@ -269,7 +287,7 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
                 f"{risk.evidence or 'None'} | {risk.level.title()} {risk.score:.1f} | "
                 f"{risk.face_value_level.title()} {risk.face_value_score:.1f} |"
             )
-    else:
+    elif not records_no_assurance:
         lines.append("- Every active control is credited in full; its assurance is evidenced.")
 
     lines.extend(["", "## Overdue Reviews", ""])

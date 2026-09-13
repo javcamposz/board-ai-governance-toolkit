@@ -55,3 +55,17 @@ def test_closed_risks_are_out_of_policy_scope():
     results = evaluate(closed, Policy(max_critical=0, max_high=0, max_overdue=0), AS_OF)
 
     assert breached(results) == []
+
+
+def test_breach_names_the_claim_and_that_it_was_not_credited(tmp_path):
+    from board_ai_governance import read_register as read
+
+    path = tmp_path / "risks.csv"
+    path.write_text(
+        "id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence\n"
+        "AI-1,Model,CTO,Approve,critical,likely,strong,open,2027-01-01,independent,\n"
+    )
+
+    results = evaluate(read(path), Policy(require_evidence_for=frozenset({"critical"})), AS_OF)
+
+    assert results[0].subjects == ("AI-1 Model (critical, assurance independent claimed, credited as asserted)",)

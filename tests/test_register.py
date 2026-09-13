@@ -137,3 +137,46 @@ def test_dashboard_names_what_is_credited_on_trust():
     assert "asserted" in section
     assert "AI-003" not in section
     assert "Controls with no evidence recorded: 1" in report
+
+
+def test_placeholder_evidence_cannot_buy_assurance_credit(tmp_path):
+    path = tmp_path / "risks.csv"
+    path.write_text(
+        "id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence\n"
+        "AI-1,Model,CTO,Approve,critical,likely,strong,open,2027-01-01,independent,N/A\n"
+        "AI-2,Model,CTO,Approve,critical,likely,strong,open,2027-01-01,independent,TBD\n"
+    )
+
+    with pytest.raises(RegisterError) as caught:
+        read_register(path)
+
+    assert caught.value.problems == [
+        "row 2: evidence must name the evidence or be left blank, not 'N/A'",
+        "row 3: evidence must name the evidence or be left blank, not 'TBD'",
+    ]
+
+
+def test_blank_evidence_remains_the_way_to_say_there_is_none(tmp_path):
+    path = tmp_path / "risks.csv"
+    path.write_text(
+        "id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence\n"
+        "AI-1,Model,CTO,Approve,critical,likely,strong,open,2027-01-01,independent,   \n"
+    )
+
+    risk = read_register(path)[0]
+
+    assert not risk.is_evidenced
+    assert risk.effective_assurance == "asserted"
+
+
+def test_a_register_recording_no_assurance_at_all_says_so(tmp_path):
+    path = tmp_path / "risks.csv"
+    path.write_text(
+        "id,system,owner,decision,impact,likelihood,control_strength,status,next_review\n"
+        "AI-1,Model,CTO,Approve,high,likely,strong,open,2027-01-01\n"
+    )
+
+    report = render_dashboard(read_register(path), date(2026, 9, 12))
+
+    assert "This register records no assurance and no evidence" in report
+    assert "most pessimistic reading available" in report
