@@ -140,6 +140,10 @@ A `weak` control gains nothing from assurance; there is no credit to earn. The d
 score and what the register would have reported had the control rating been taken on trust, so the board
 can see how much of its comfort rests on assertion and challenge every input.
 
+`evidence` must name the evidence or be left blank. Placeholders that mean "none" (`N/A`, `TBD`, `pending`,
+`-`, and similar) are rejected in validation, because a control credited on the strength of a keystroke is
+exactly the failure this is meant to catch.
+
 The score is a prioritization aid, not a statistical prediction. Adapt the thresholds and the credit
 schedule to the organization.
 

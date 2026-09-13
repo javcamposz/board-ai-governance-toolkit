@@ -39,6 +39,8 @@ def _summarize(args: argparse.Namespace) -> int:
 
 def _levels(value: str) -> frozenset[str]:
     chosen = {level.strip().lower() for level in value.split(",") if level.strip()}
+    if not chosen:
+        raise argparse.ArgumentTypeError(f"no levels given; choose from {', '.join(LEVELS)}")
     unknown = sorted(chosen - set(LEVELS))
     if unknown:
         raise argparse.ArgumentTypeError(f"unknown level(s): {', '.join(unknown)}; choose from {', '.join(LEVELS)}")

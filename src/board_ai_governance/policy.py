@@ -38,6 +38,13 @@ class Result:
         return f"{'PASS' if self.passed else 'FAIL'}  {self.rule}: {self.detail}"
 
 
+def _assurance_note(risk: Risk) -> str:
+    """Name the claim and the fact that it was not credited, never the claim alone."""
+    if risk.is_unevidenced_claim:
+        return f"{risk.assurance} claimed, credited as {risk.effective_assurance}"
+    return risk.effective_assurance
+
+
 def _count_rule(rule: str, matched: list[Risk], limit: int, noun: str) -> Result:
     return Result(
         rule=rule,
@@ -79,7 +86,10 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
             rule="evidence",
             passed=not matched,
             detail=f"{len(matched)} {required} risks with no evidence recorded",
-            subjects=tuple(f"{risk.id} {risk.system} ({risk.level}, assurance {risk.assurance})" for risk in matched),
+            subjects=tuple(
+                f"{risk.id} {risk.system} ({risk.level}, assurance {_assurance_note(risk)})"
+                for risk in matched
+            ),
         ))
 
     return results

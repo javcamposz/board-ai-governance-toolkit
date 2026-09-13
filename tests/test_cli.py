@@ -106,3 +106,8 @@ def test_check_separates_a_breach_from_an_invalid_register(tmp_path, capsys):
 def test_unknown_level_is_refused():
     with pytest.raises(SystemExit):
         main(["check", str(EXAMPLES / "ai-risk-register.csv"), "--require-evidence-for", "catastrophic"])
+
+
+def test_an_empty_level_list_is_refused_rather_than_silently_disarming_the_gate():
+    with pytest.raises(SystemExit):
+        main(["check", str(EXAMPLES / "ai-risk-register.csv"), "--require-evidence-for", ""])
