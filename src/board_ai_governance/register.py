@@ -183,6 +183,13 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
             problems.append(f"row {row_number}: date_opened must be YYYY-MM-DD")
             opened_is_unreadable = True
 
+    if opened is not None and review is not None and opened > review:
+        problems.append(
+            f"row {row_number}: date_opened {opened.isoformat()} is after next_review "
+            f"{review.isoformat()}; a risk cannot be reviewed before it was opened"
+        )
+        opened_is_unreadable = True
+
     evidence = (row.get("evidence") or "").strip()
     if evidence.lower() in NULL_EVIDENCE:
         problems.append(
@@ -273,9 +280,17 @@ class Portfolio:
 
     @property
     def aged(self) -> tuple[Risk, ...]:
-        """Active risks that record when they were opened, oldest first."""
+        """Active risks open on the reporting date, oldest first."""
         return tuple(sorted(
-            (risk for risk in self.active if risk.date_opened is not None),
+            (risk for risk in self.active if (risk.age_days(self.as_of) or 0) >= 0 and risk.date_opened),
+            key=lambda risk: (risk.date_opened, risk.id),
+        ))
+
+    @property
+    def not_yet_opened(self) -> tuple[Risk, ...]:
+        """Active risks the register says open after the reporting date, which needs explaining."""
+        return tuple(sorted(
+            (risk for risk in self.active if risk.date_opened is not None and risk.date_opened > self.as_of),
             key=lambda risk: (risk.date_opened, risk.id),
         ))
 
@@ -396,14 +411,25 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         if len(aged) > 10:
             lines.append("")
             lines.append(f"{len(aged) - 10} further dated active risks are not shown.")
+    caveats = []
     if portfolio.undated:
+        count = len(portfolio.undated)
+        subject = "1 active risk records" if count == 1 else f"{count} active risks record"
+        carried = "it" if count == 1 else "them"
+        caveats.append(
+            f"{subject} no opening date, so how long the organization has carried "
+            f"{carried} cannot be reported."
+        )
+    for risk in portfolio.not_yet_opened:
+        caveats.append(
+            f"**{risk.id}** is dated {risk.date_opened.isoformat()}, after this report, so it cannot "
+            f"be aged. Confirm whether the opening date is wrong or the risk is not yet live."
+        )
+    if caveats:
         if aged:
             lines.append("")
-        lines.append(
-            f"{len(portfolio.undated)} active risks record no opening date, so how long the "
-            "organization has carried them cannot be reported."
-        )
-    if not aged and not portfolio.undated:
+        lines.extend(caveats)
+    if not aged and not caveats:
         lines.append("- No active risk to age.")
 
     lines.extend([

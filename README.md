@@ -123,8 +123,10 @@ evidence, which is the pessimistic reading and usually the accurate one, and its
 
 A risk that has sat in `mitigating` for eighteen months is not being mitigated. With `date_opened`
 recorded, the dashboard ages the active register oldest first, and `check --max-open-days` fails when a
-risk has been carried longer than the organization said it would tolerate. Risks with no opening date are
-counted and named as untestable rather than quietly passed.
+risk has been carried longer than the organization said it would tolerate. Risks with no usable opening
+date are counted and named as untestable rather than quietly passed, and a risk dated after the reporting
+date is surfaced for correction rather than aged to a negative number. `date_opened` after `next_review`
+is a validation error, because a risk cannot be reviewed before it was opened.
 
 ## Why A Control Rating Is Not Taken On Trust
 

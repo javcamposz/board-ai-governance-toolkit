@@ -70,7 +70,8 @@ def test_dashboard_says_when_opening_dates_are_missing(tmp_path):
     path = write(tmp_path, "AI-1,M,CTO,A,high,likely,strong,open,2027-01-01,asserted,,\n")
     section = render_dashboard(read_register(path), AS_OF).split("## Ageing", 1)[1]
 
-    assert "1 active risks record no opening date" in section
+    assert "1 active risk records no opening date" in section
+    assert "carried it cannot be reported" in section
 
 
 def test_age_rule_names_what_it_could_not_test(tmp_path):
@@ -83,7 +84,7 @@ def test_age_rule_names_what_it_could_not_test(tmp_path):
 
     assert breached(results) == results
     assert results[0].detail == (
-        "1 risk open longer than 365 days; 1 record no opening date and could not be tested"
+        "1 risk open longer than 365 days; 1 record no usable opening date and could not be tested"
     )
     assert "AI-1 Legacy open 971 days since 2024-01-15, still mitigating" in results[0].subjects[0]
 
@@ -116,3 +117,45 @@ def test_a_rewritten_opening_date_shows_up_as_a_change(tmp_path):
     diff = diff_registers(read_register(before), read_register(after), AS_OF)
 
     assert "date opened: 2024-01-01 to 2026-01-01" in render_diff(diff)
+
+
+def test_a_risk_dated_after_the_report_is_surfaced_not_aged(tmp_path):
+    """A negative age is nonsense in a board pack; say the date is wrong instead."""
+    path = write(tmp_path, "AI-1,Planned,CTO,A,high,likely,strong,open,2027-06-01,asserted,,2027-01-15\n")
+    portfolio = Portfolio(as_of=AS_OF, risks=tuple(read_register(path)))
+
+    assert portfolio.aged == ()
+    assert [risk.id for risk in portfolio.not_yet_opened] == ["AI-1"]
+
+    section = render_dashboard(read_register(path), AS_OF).split("## Ageing", 1)[1]
+    assert "-125" not in section
+    assert "**AI-1** is dated 2027-01-15, after this report" in section
+
+
+def test_a_risk_dated_after_the_report_cannot_quietly_clear_the_age_gate(tmp_path):
+    path = write(tmp_path, "AI-1,Planned,CTO,A,high,likely,strong,open,2027-06-01,asserted,,2027-01-15\n")
+    results = evaluate(read_register(path), Policy(max_open_days=0), AS_OF)
+
+    assert results[0].detail == (
+        "0 risks open longer than 0 days; 1 record no usable opening date and could not be tested"
+    )
+
+
+def test_an_opening_date_after_the_review_date_is_rejected(tmp_path):
+    path = write(tmp_path, "AI-1,S,CTO,A,high,likely,strong,open,2026-01-01,asserted,,2026-08-01\n")
+
+    with pytest.raises(RegisterError) as caught:
+        read_register(path)
+
+    assert caught.value.problems == [
+        "row 2: date_opened 2026-08-01 is after next_review 2026-01-01; "
+        "a risk cannot be reviewed before it was opened"
+    ]
+
+
+def test_one_undated_risk_reads_in_the_singular(tmp_path):
+    path = write(tmp_path, "AI-1,M,CTO,A,high,likely,strong,open,2027-01-01,asserted,,\n")
+    section = render_dashboard(read_register(path), AS_OF).split("## Ageing", 1)[1]
+
+    assert "1 active risk records no opening date" in section
+    assert "carried it cannot be reported" in section
