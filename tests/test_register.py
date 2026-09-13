@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from board_ai_governance import read_register, render_dashboard
+from board_ai_governance import RegisterError, read_register, render_dashboard
 
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "ai-risk-register.csv"
@@ -37,4 +37,30 @@ def test_invalid_enum_is_rejected(tmp_path):
     )
 
     with pytest.raises(ValueError, match="impact"):
+        read_register(path)
+
+
+def test_every_problem_is_reported_in_one_pass(tmp_path):
+    path = tmp_path / "risks.csv"
+    path.write_text(
+        "id,system,owner,decision,impact,likelihood,control_strength,status,next_review\n"
+        "AI-1,Model,CTO,Approve,catastrophic,likely,weak,open,2026-12-01\n"
+        "AI-1,,CTO,Approve,high,likely,weak,open,2026-12-01\n"
+    )
+
+    with pytest.raises(RegisterError) as caught:
+        read_register(path)
+
+    assert caught.value.problems == [
+        "row 2: impact must be one of critical, high, low, medium",
+        "row 3: duplicate id AI-1",
+        "row 3: system is required",
+    ]
+
+
+def test_missing_columns_are_named(tmp_path):
+    path = tmp_path / "risks.csv"
+    path.write_text("id,system,owner\nAI-1,Model,CTO\n")
+
+    with pytest.raises(RegisterError, match="missing required columns: decision"):
         read_register(path)

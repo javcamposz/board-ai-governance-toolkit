@@ -6,4 +6,5 @@ __pycache__/
 build/
 dist/
 board-summary.md
+change-report.md
 .DS_Store
