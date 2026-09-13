@@ -1,2 +1,2 @@
 id,system,owner,decision,impact,likelihood,control_strength,status,next_review
-AI-001,,,,medium,possible,weak,open,2026-12-31
+AI-001,Name the AI system or use case,Name the accountable role,State the decision or outcome at risk,medium,possible,weak,open,2026-12-31

@@ -1,0 +1,5 @@
+id,system,owner,decision,impact,likelihood,control_strength,status,next_review
+AI-001,Customer support assistant,Chief Operating Officer,Approve expansion beyond answer drafting,high,possible,weak,open,2026-06-30
+AI-002,Recruitment ranking pilot,Chief People Officer,Decide whether the pilot has sufficient fairness evidence,critical,possible,strong,open,2026-07-15
+AI-004,Fraud triage model,Chief Risk Officer,Confirm monitoring thresholds before renewal,high,rare,strong,open,2026-08-31
+AI-005,Supplier contract summarisation,General Counsel,Approve use on binding contract terms,medium,possible,partial,open,2026-08-15
