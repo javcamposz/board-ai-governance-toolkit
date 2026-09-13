@@ -43,11 +43,37 @@ Removed while still active: 1
 
 The change report leads with what requires explanation: risks that left the register without being closed, escalations, controls that weakened, accountable owners that changed, and review dates pushed out after they had already fallen due. Repeated slippage is visible in days, not in reassurance.
 
+## Enforce A Policy
+
+A register that reports a breach but never fails is a document, not a control. `ai-board check` tests a
+register against thresholds an organization is willing to be held to between board meetings, and exits
+non-zero when they are breached, so it can run on a schedule.
+
+```bash
+ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 \
+  --max-critical 0 --max-overdue 0 --require-evidence-for high,critical
+```
+
+```text
+Validated 4 AI risks as of 2026-09-12
+FAIL  critical risks: 1 critical (limit 0)
+        AI-002 Recruitment ranking pilot
+FAIL  overdue reviews: 1 overdue (limit 0)
+        AI-001 was due 2026-09-01 (Customer Operations Director)
+FAIL  evidence: 1 high, critical risks with no evidence recorded
+        AI-002 Recruitment ranking pilot (critical, assurance asserted)
+3 of 3 rules breached
+```
+
+Thresholds are opt-in, because risk appetite belongs to the organization and not to this tool. With no
+threshold set, `check` validates the register and tests nothing. Closed risks are out of scope.
+
 ## Exit Codes
 
 | Code | Meaning |
 |---:|---|
-| `0` | The register was valid and the report was produced |
+| `0` | The register was valid and the report was produced, or the policy was satisfied |
+| `1` | The register was valid but breached a policy threshold (`ai-board check` only) |
 | `2` | The register could not be read or failed validation |
 
 Validation reports every problem in one pass, with row numbers, so a register is corrected in a single edit rather than one run per error.
@@ -68,7 +94,7 @@ error: register.csv: 3 problems
 - `templates/quarterly-dashboard.md`: board reporting structure
 - `docs/board-questions.md`: questions that surface capability, control, and accountability gaps
 - `docs/decision-rights.md`: a practical escalation model
-- `src/board_ai_governance/`: dependency-free validation, comparison, and reporting CLI
+- `src/board_ai_governance/`: dependency-free validation, scoring, comparison, and policy CLI
 
 ## Risk Register Contract
 
@@ -83,8 +109,39 @@ error: register.csv: 3 problems
 | `control_strength` | `weak`, `partial`, or `strong` |
 | `status` | `open`, `mitigating`, `accepted`, or `closed` |
 | `next_review` | ISO date (`YYYY-MM-DD`) |
+| `assurance` | Optional. `asserted`, `tested`, or `independent`: who verified the control rating |
+| `evidence` | Optional. Reference to the evidence behind the rating, such as a memo or review |
 
-The score is a prioritization aid, not a statistical prediction. It combines ordinal impact and likelihood with a transparent control-strength factor so board discussion can challenge every input.
+A register without the two optional columns still loads. Every risk in it is read as `asserted` with no
+evidence, which is the pessimistic reading and usually the accurate one.
+
+## Why A Control Rating Is Not Taken On Trust
+
+`control_strength` is a self-report, and on its own it moves the number a long way. A critical-impact,
+possible-likelihood risk reports as `medium` on the strength of one typed word:
+
+```text
+critical impact, possible likelihood, weak    control -> 8.0 critical
+critical impact, possible likelihood, strong  control -> 2.8 medium
+```
+
+`docs/board-questions.md` already asks which controls have been tested independently rather than asserted
+by the supplier. The score now asks the same question. A control is credited toward its stated strength
+only as far as its assurance carries it, and an assurance claim with no evidence recorded is credited as
+an assertion, because verification you cannot point at is an assertion.
+
+| Assurance | Credit toward the stated control strength |
+|---|---:|
+| `asserted` | 40% |
+| `tested` | 75% |
+| `independent` | 100% |
+
+A `weak` control gains nothing from assurance; there is no credit to earn. The dashboard reports both the
+score and what the register would have reported had the control rating been taken on trust, so the board
+can see how much of its comfort rests on assertion and challenge every input.
+
+The score is a prioritization aid, not a statistical prediction. Adapt the thresholds and the credit
+schedule to the organization.
 
 ## Development
 
@@ -93,6 +150,7 @@ pip install -e '.[dev]'
 pytest
 python -m board_ai_governance summarize examples/ai-risk-register.csv --as-of 2026-09-12
 python -m board_ai_governance diff examples/ai-risk-register-previous.csv examples/ai-risk-register.csv --as-of 2026-09-12
+python -m board_ai_governance check examples/ai-risk-register.csv --as-of 2026-09-12 --max-overdue 0
 ```
 
 ## Responsible Use

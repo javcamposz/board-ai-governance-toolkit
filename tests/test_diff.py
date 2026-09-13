@@ -65,7 +65,7 @@ def test_report_leads_with_what_requires_explanation():
 
     assert "AI-005" in explanation
     assert "left the register while still open" in explanation
-    assert "escalated from medium to high" in explanation
+    assert "escalated from high to critical" in explanation
     assert report.index("## Requires Explanation") < report.index("## Movement")
 
 
@@ -92,3 +92,29 @@ def test_reopened_risk_is_separated_from_ordinary_change(tmp_path):
     assert [change.id for change in diff.reopened] == ["AI-1"]
     assert diff.changed == ()
     assert "is active again as open" in render_diff(diff)
+
+
+def test_withdrawn_evidence_is_reported_as_weakened_assurance():
+    diff = build_diff()
+
+    assert [change.id for change in diff.weakened_assurance] == ["AI-002"]
+    change = diff.weakened_assurance[0]
+    assert change.lost_evidence
+    assert change.assurance_direction == "weakened"
+
+    explanation = render_diff(diff).split("## Requires Explanation", 1)[1].split("## Movement", 1)[0]
+    assert "no longer records evidence" in explanation
+    assert "ai-002-supplier-fairness-claim.md was removed" in explanation
+
+
+def test_assurance_movement_is_judged_on_what_is_credited_not_claimed(tmp_path):
+    header = ("id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence\n")
+    before = tmp_path / "before.csv"
+    after = tmp_path / "after.csv"
+    before.write_text(header + "AI-1,Model,CTO,Approve,high,likely,strong,open,2026-06-01,asserted,\n")
+    after.write_text(header + "AI-1,Model,CTO,Approve,high,likely,strong,open,2026-06-01,independent,\n")
+
+    diff = diff_registers(read_register(before), read_register(after), AS_OF)
+
+    assert diff.weakened_assurance == ()
+    assert diff.changed[0].assurance_direction == "unchanged"

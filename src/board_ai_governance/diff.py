@@ -7,6 +7,7 @@ from .register import Risk
 
 LEVEL_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 CONTROL_ORDER = {"weak": 0, "partial": 1, "strong": 2}
+ASSURANCE_ORDER = {"asserted": 0, "tested": 1, "independent": 2}
 TRACKED_FIELDS = (
     "system",
     "owner",
@@ -16,6 +17,8 @@ TRACKED_FIELDS = (
     "control_strength",
     "status",
     "next_review",
+    "assurance",
+    "evidence",
 )
 
 
@@ -58,6 +61,20 @@ class RiskChange:
         return "unchanged"
 
     @property
+    def assurance_direction(self) -> str:
+        """Movement in assurance actually credited, not merely claimed."""
+        moved = ASSURANCE_ORDER[self.after.effective_assurance] - ASSURANCE_ORDER[self.before.effective_assurance]
+        if moved > 0:
+            return "strengthened"
+        if moved < 0:
+            return "weakened"
+        return "unchanged"
+
+    @property
+    def lost_evidence(self) -> bool:
+        return self.before.is_evidenced and not self.after.is_evidenced
+
+    @property
     def slip_days(self) -> int:
         """Days the next review moved later; negative when it was pulled forward."""
         return (self.after.next_review - self.before.next_review).days
@@ -98,6 +115,13 @@ class RegisterDiff:
     @property
     def weakened_controls(self) -> tuple[RiskChange, ...]:
         return tuple(change for change in self.changed if change.control_direction == "weakened")
+
+    @property
+    def weakened_assurance(self) -> tuple[RiskChange, ...]:
+        return tuple(
+            change for change in self.changed + self.reopened
+            if change.assurance_direction == "weakened" or change.lost_evidence
+        )
 
 
 def _field_value(risk: Risk, field: str) -> str:
@@ -177,6 +201,7 @@ def render_diff(diff: RegisterDiff) -> str:
         f"- Reopened: {len(diff.reopened)}",
         f"- Removed while still active: {len(diff.dropped)}",
         f"- Reviews moved later: {len(diff.slipped)}",
+        f"- Assurance weakened or evidence withdrawn: {len(diff.weakened_assurance)}",
         f"- Accountable owner changed: {len(diff.owner_changes)}",
         f"- Unchanged: {len(diff.unchanged)}",
         "",
@@ -201,6 +226,17 @@ def render_diff(diff: RegisterDiff) -> str:
             f"- **{change.id} / {change.after.system}** control strength fell from "
             f"{change.before.control_strength} to {change.after.control_strength}."
         )
+    for change in diff.weakened_assurance:
+        if change.lost_evidence:
+            challenges.append(
+                f"- **{change.id} / {change.after.system}** no longer records evidence for its control "
+                f"rating; {change.before.evidence} was removed."
+            )
+        else:
+            challenges.append(
+                f"- **{change.id} / {change.after.system}** assurance fell from "
+                f"{change.before.effective_assurance} to {change.after.effective_assurance}."
+            )
     for change in diff.slipped:
         if change.was_due(as_of):
             challenges.append(

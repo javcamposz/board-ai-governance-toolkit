@@ -66,3 +66,43 @@ def test_missing_file_is_reported_cleanly(tmp_path, capsys):
 def test_unknown_command_exits_with_usage():
     with pytest.raises(SystemExit):
         main(["explode"])
+
+
+def test_check_without_thresholds_tests_nothing(capsys):
+    code = main(["check", str(EXAMPLES / "ai-risk-register.csv"), "--as-of", "2026-09-12"])
+
+    assert code == 0
+    assert "No thresholds were set" in capsys.readouterr().out
+
+
+def test_check_passes_when_the_policy_is_met(capsys):
+    code = main(["check", str(EXAMPLES / "ai-risk-register.csv"), "--as-of", "2026-09-12", "--max-critical", "1"])
+
+    assert code == 0
+    assert "All 1 rules satisfied" in capsys.readouterr().out
+
+
+def test_check_exits_one_on_policy_breach(capsys):
+    code = main([
+        "check", str(EXAMPLES / "ai-risk-register.csv"), "--as-of", "2026-09-12",
+        "--max-critical", "0", "--require-evidence-for", "high,critical",
+    ])
+    out = capsys.readouterr().out
+
+    assert code == 1
+    assert "FAIL  critical risks: 1 critical (limit 0)" in out
+    assert "AI-002 Recruitment ranking pilot" in out
+    assert "2 of 2 rules breached" in out
+
+
+def test_check_separates_a_breach_from_an_invalid_register(tmp_path, capsys):
+    path = tmp_path / "risks.csv"
+    path.write_text("id,system,owner\nAI-1,Model,CTO\n")
+
+    assert main(["check", str(path), "--max-critical", "0"]) == 2
+    assert "missing required columns" in capsys.readouterr().err
+
+
+def test_unknown_level_is_refused():
+    with pytest.raises(SystemExit):
+        main(["check", str(EXAMPLES / "ai-risk-register.csv"), "--require-evidence-for", "catastrophic"])

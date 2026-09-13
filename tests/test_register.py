@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from board_ai_governance import RegisterError, read_register, render_dashboard
+from board_ai_governance import RegisterError, Risk, read_register, render_dashboard
 
 
 EXAMPLE = Path(__file__).parents[1] / "examples" / "ai-risk-register.csv"
@@ -14,8 +14,8 @@ def test_register_scores_and_orders_priority_risks():
     report = render_dashboard(risks, date(2026, 9, 12))
 
     assert len(risks) == 4
-    assert risks[1].score == 4.2
-    assert risks[1].level == "high"
+    assert risks[1].score == 8.9
+    assert risks[1].level == "critical"
     assert report.index("AI-002") < report.index("AI-003")
     assert "Overdue reviews: 1" in report
 
@@ -64,3 +64,76 @@ def test_missing_columns_are_named(tmp_path):
 
     with pytest.raises(RegisterError, match="missing required columns: decision"):
         read_register(path)
+
+
+def test_evidenced_independent_assurance_keeps_the_full_control_credit():
+    evidenced = Risk("AI-1", "S", "O", "D", "critical", "possible", "strong", "open", date(2027, 1, 1),
+                     "independent", "evidence/review.md")
+
+    assert evidenced.score == evidenced.face_value_score == 2.8
+    assert evidenced.comfort_gap == 0.0
+    assert evidenced.level == "medium"
+
+
+def test_an_assertion_does_not_earn_the_control_rating():
+    asserted = Risk("AI-1", "S", "O", "D", "critical", "possible", "strong", "open", date(2027, 1, 1))
+
+    assert asserted.face_value_score == 2.8
+    assert asserted.score == 5.9
+    assert asserted.level == "high"
+    assert asserted.face_value_level == "medium"
+    assert asserted.comfort_gap == 3.1
+
+
+def test_verification_you_cannot_point_at_is_an_assertion():
+    unevidenced = Risk("AI-1", "S", "O", "D", "critical", "possible", "strong", "open", date(2027, 1, 1),
+                       "independent", "")
+    asserted = Risk("AI-1", "S", "O", "D", "critical", "possible", "strong", "open", date(2027, 1, 1))
+
+    assert unevidenced.is_unevidenced_claim
+    assert unevidenced.effective_assurance == "asserted"
+    assert unevidenced.score == asserted.score
+
+
+def test_a_weak_control_gains_nothing_from_assurance():
+    scores = {
+        Risk("AI-1", "S", "O", "D", "high", "likely", "weak", "open", date(2027, 1, 1), assurance, "evidence/x.md").score
+        for assurance in ("asserted", "tested", "independent")
+    }
+
+    assert scores == {9.0}
+
+
+def test_registers_without_the_optional_columns_still_load(tmp_path):
+    path = tmp_path / "risks.csv"
+    path.write_text(
+        "id,system,owner,decision,impact,likelihood,control_strength,status,next_review\n"
+        "AI-1,Model,CTO,Approve,high,likely,strong,open,2026-12-01\n"
+    )
+
+    risk = read_register(path)[0]
+
+    assert risk.assurance == "asserted"
+    assert risk.evidence == ""
+    assert not risk.is_evidenced
+
+
+def test_unknown_assurance_value_is_rejected(tmp_path):
+    path = tmp_path / "risks.csv"
+    path.write_text(
+        "id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence\n"
+        "AI-1,Model,CTO,Approve,high,likely,strong,open,2026-12-01,vendor_says_so,\n"
+    )
+
+    with pytest.raises(RegisterError, match="assurance must be one of asserted, independent, tested"):
+        read_register(path)
+
+
+def test_dashboard_names_what_is_credited_on_trust():
+    report = render_dashboard(read_register(EXAMPLE), date(2026, 9, 12))
+    section = report.split("## Comfort Without Evidence", 1)[1].split("## Overdue Reviews", 1)[0]
+
+    assert "AI-002" in section
+    assert "asserted" in section
+    assert "AI-003" not in section
+    assert "Controls with no evidence recorded: 1" in report
