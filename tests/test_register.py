@@ -5,7 +5,6 @@ import pytest
 
 from board_ai_governance import RegisterError, Risk, read_register, render_dashboard
 
-
 EXAMPLE = Path(__file__).parents[1] / "examples" / "ai-risk-register.csv"
 
 
@@ -97,7 +96,8 @@ def test_verification_you_cannot_point_at_is_an_assertion():
 
 def test_a_weak_control_gains_nothing_from_assurance():
     scores = {
-        Risk("AI-1", "S", "O", "D", "high", "likely", "weak", "open", date(2027, 1, 1), assurance, "evidence/x.md").score
+        Risk("AI-1", "S", "O", "D", "high", "likely", "weak", "open",
+             date(2027, 1, 1), assurance, "evidence/x.md").score
         for assurance in ("asserted", "tested", "independent")
     }
 

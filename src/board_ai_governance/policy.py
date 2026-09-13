@@ -15,6 +15,7 @@ class Policy:
     max_critical: int | None = None
     max_high: int | None = None
     max_overdue: int | None = None
+    max_open_days: int | None = None
     require_evidence_for: frozenset[str] = field(default_factory=frozenset)
 
     @property
@@ -23,6 +24,7 @@ class Policy:
             self.max_critical is not None,
             self.max_high is not None,
             self.max_overdue is not None,
+            self.max_open_days is not None,
             self.require_evidence_for,
         ))
 
@@ -36,6 +38,13 @@ class Result:
 
     def __str__(self) -> str:
         return f"{'PASS' if self.passed else 'FAIL'}  {self.rule}: {self.detail}"
+
+
+def _level_note(risk: Risk) -> str:
+    """Name both readings when they differ, so a match on the face-value level is not a surprise."""
+    if risk.level != risk.face_value_level:
+        return f"{risk.level}, {risk.face_value_level} at face value"
+    return risk.level
 
 
 def _assurance_note(risk: Risk) -> str:
@@ -79,15 +88,44 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
             subjects=tuple(f"{risk.id} was due {risk.next_review.isoformat()} ({risk.owner})" for risk in matched),
         ))
 
+    if policy.max_open_days is not None:
+        dated = [risk for risk in active if risk.date_opened is not None]
+        matched = sorted(
+            (risk for risk in dated if (risk.age_days(as_of) or 0) > policy.max_open_days),
+            key=lambda risk: (risk.date_opened, risk.id),
+        )
+        undated = len(active) - len(dated)
+        noun = "risk" if len(matched) == 1 else "risks"
+        detail = f"{len(matched)} {noun} open longer than {policy.max_open_days} days"
+        if undated:
+            detail += f"; {undated} record no opening date and could not be tested"
+        results.append(Result(
+            rule="risk age",
+            passed=not matched,
+            detail=detail,
+            subjects=tuple(
+                f"{risk.id} {risk.system} open {risk.age_days(as_of)} days since "
+                f"{risk.date_opened.isoformat()}, still {risk.status}"
+                for risk in matched
+            ),
+        ))
+
     if policy.require_evidence_for:
         required = ", ".join(level for level in LEVELS if level in policy.require_evidence_for)
-        matched = [risk for risk in active if risk.level in policy.require_evidence_for and not risk.is_evidenced]
+        # Match on either reading of the level. A risk whose missing evidence pushed it past the
+        # level under test must not escape the very rule that missing evidence should trigger.
+        matched = [
+            risk for risk in active
+            if not risk.is_evidenced
+            and (risk.level in policy.require_evidence_for or risk.face_value_level in policy.require_evidence_for)
+        ]
+        noun = "risk" if len(matched) == 1 else "risks"
         results.append(Result(
             rule="evidence",
             passed=not matched,
-            detail=f"{len(matched)} {required} risks with no evidence recorded",
+            detail=f"{len(matched)} {noun} at {required} with no evidence recorded",
             subjects=tuple(
-                f"{risk.id} {risk.system} ({risk.level}, assurance {_assurance_note(risk)})"
+                f"{risk.id} {risk.system} ({_level_note(risk)}, assurance {_assurance_note(risk)})"
                 for risk in matched
             ),
         ))

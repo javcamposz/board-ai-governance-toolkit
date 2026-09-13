@@ -3,7 +3,6 @@ from pathlib import Path
 
 from board_ai_governance import diff_registers, read_register, render_diff
 
-
 EXAMPLES = Path(__file__).parents[1] / "examples"
 PREVIOUS = EXAMPLES / "ai-risk-register-previous.csv"
 CURRENT = EXAMPLES / "ai-risk-register.csv"

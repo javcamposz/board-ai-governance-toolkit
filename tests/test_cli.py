@@ -4,7 +4,6 @@ import pytest
 
 from board_ai_governance.cli import main
 
-
 EXAMPLES = Path(__file__).parents[1] / "examples"
 TEMPLATES = Path(__file__).parents[1] / "templates"
 

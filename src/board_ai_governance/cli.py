@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .diff import diff_registers, render_diff
 from .policy import LEVELS, Policy, breached, evaluate
-from .register import RegisterError, read_register, render_dashboard
+from .register import Portfolio, RegisterError, read_register, render_dashboard
 
 EXIT_OK = 0
 EXIT_POLICY_BREACH = 1
@@ -24,14 +24,14 @@ def _emit(report: str, output: Path | None) -> None:
 def _summarize(args: argparse.Namespace) -> int:
     risks = read_register(args.input)
     _emit(render_dashboard(risks, args.as_of), args.output)
-    active = [risk for risk in risks if risk.is_active]
-    elevated = sum(risk.level in {"high", "critical"} for risk in active)
-    overdue = sum(risk.next_review < args.as_of for risk in active)
+    portfolio = Portfolio(as_of=args.as_of, risks=tuple(risks))
 
     print(f"Validated {len(risks)} AI risks")
-    print(f"High or critical open risks: {elevated}")
-    print(f"Overdue reviews: {overdue}")
-    print(f"Controls with no evidence recorded: {sum(not risk.is_evidenced for risk in active)}")
+    print(f"High or critical open risks: {len(portfolio.elevated)}")
+    print(f"Overdue reviews: {len(portfolio.overdue)}")
+    print(f"Controls with no evidence recorded: {len(portfolio.unevidenced)}")
+    if portfolio.undated:
+        print(f"Active risks with no opening date: {len(portfolio.undated)}")
     if args.output:
         print(f"Dashboard written to {args.output}")
     return EXIT_OK
@@ -53,6 +53,7 @@ def _check(args: argparse.Namespace) -> int:
         max_critical=args.max_critical,
         max_high=args.max_high,
         max_overdue=args.max_overdue,
+        max_open_days=args.max_open_days,
         require_evidence_for=args.require_evidence_for or frozenset(),
     )
     results = evaluate(risks, policy, args.as_of)
@@ -60,7 +61,7 @@ def _check(args: argparse.Namespace) -> int:
     print(f"Validated {len(risks)} AI risks as of {args.as_of.isoformat()}")
     if policy.is_empty:
         print("No thresholds were set, so nothing was tested. Pass --max-critical, --max-high, "
-              "--max-overdue, or --require-evidence-for to enforce a policy.")
+              "--max-overdue, --max-open-days, or --require-evidence-for to enforce a policy.")
         return EXIT_OK
 
     for result in results:
@@ -115,6 +116,7 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--max-critical", type=int, help="maximum active critical risks")
     check.add_argument("--max-high", type=int, help="maximum active high risks")
     check.add_argument("--max-overdue", type=int, help="maximum active risks past their review date")
+    check.add_argument("--max-open-days", type=int, help="maximum days an active risk may have been open")
     check.add_argument(
         "--require-evidence-for",
         type=_levels,

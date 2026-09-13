@@ -3,7 +3,6 @@ from pathlib import Path
 
 from board_ai_governance import Policy, breached, evaluate, read_register
 
-
 EXAMPLE = Path(__file__).parents[1] / "examples" / "ai-risk-register.csv"
 AS_OF = date(2026, 9, 12)
 
@@ -40,8 +39,10 @@ def test_evidence_requirement_catches_unevidenced_elevated_risks():
     results = evaluate(risks(), Policy(require_evidence_for=frozenset({"high", "critical"})), AS_OF)
 
     assert breached(results) == results
-    assert results[0].detail == "1 high, critical risks with no evidence recorded"
-    assert results[0].subjects == ("AI-002 Recruitment ranking pilot (critical, assurance asserted)",)
+    assert results[0].detail == "1 risk at high, critical with no evidence recorded"
+    assert results[0].subjects == (
+        "AI-002 Recruitment ranking pilot (critical, high at face value, assurance asserted)",
+    )
 
 
 def test_evidence_requirement_ignores_levels_it_was_not_asked_about():
@@ -68,4 +69,6 @@ def test_breach_names_the_claim_and_that_it_was_not_credited(tmp_path):
 
     results = evaluate(read(path), Policy(require_evidence_for=frozenset({"critical"})), AS_OF)
 
-    assert results[0].subjects == ("AI-1 Model (critical, assurance independent claimed, credited as asserted)",)
+    assert results[0].subjects == (
+        "AI-1 Model (critical, high at face value, assurance independent claimed, credited as asserted)",
+    )
