@@ -233,6 +233,13 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
         )
         unreadable = True
 
+    if optional_dates["decision_due"] is not None and opened is not None and optional_dates["decision_due"] < opened:
+        problems.append(
+            f"row {row_number}: decision_due {optional_dates['decision_due'].isoformat()} is before "
+            f"date_opened {opened.isoformat()}; a decision cannot be required before the risk"
+        )
+        unreadable = True
+
     if opened is not None and review is not None and opened > review:
         problems.append(
             f"row {row_number}: date_opened {opened.isoformat()} is after next_review "
@@ -392,6 +399,11 @@ def _decision_state(risk: Risk, as_of: date) -> str:
     if overdue:
         return f"Outstanding, and {overdue} days past the {risk.decision_due.isoformat()} it was due."
     waited = risk.days_undecided(as_of)
+    if waited is not None and waited < 0:
+        return (
+            f"Outstanding, but dated {risk.date_opened.isoformat()}, after this report; "
+            "confirm the opening date before reading the wait."
+        )
     if waited is not None:
         return f"Outstanding for {waited} days."
     return "Outstanding; no date recorded for when it was first required."
@@ -455,9 +467,15 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         for risk in sorted(outstanding, key=lambda item: (-item.score, item.id)):
             waited = risk.days_undecided(as_of)
             past_due = risk.decision_overdue_days(as_of)
+            if waited is None:
+                asked = "not recorded"
+            elif waited < 0:
+                asked = f"dated {risk.date_opened.isoformat()}, after this report"
+            else:
+                asked = f"{waited} days"
             lines.append(
                 f"| {risk.id} | {risk.system} | {risk.decision.rstrip('.')} | {risk.owner} | "
-                f"{'not recorded' if waited is None else f'{waited} days'} | "
+                f"{asked} | "
                 f"{risk.decision_due.isoformat() if risk.decision_due else 'not set'} | "
                 f"{past_due if past_due else '-'} |"
             )

@@ -154,7 +154,7 @@ def test_an_undecided_risk_with_no_opening_date_is_named_as_untimed(tmp_path):
     )
     results = evaluate(read_register(path), Policy(max_undecided_days=30), AS_OF)
 
-    assert "1 undecided with no opening date and could not be timed" in results[0].detail
+    assert "1 undecided with no usable opening date and could not be timed" in results[0].detail
 
 
 def test_a_decision_past_its_due_date_breaches():
@@ -274,3 +274,59 @@ def test_a_well_shaped_but_impossible_date_is_named_as_such(tmp_path):
 
     with pytest.raises(RegisterError, match="next_review is 2026-02-30, which is not a real date"):
         read_register(path)
+
+
+def test_a_risk_dated_after_the_report_cannot_quietly_pass_the_undecided_rule(tmp_path):
+    """The age rule was fixed for this a release ago; the decision rule must match it."""
+    path = write(
+        tmp_path,
+        "AI-1,Planned,CTO,Approve the pilot,high,likely,strong,open,2027-06-01,asserted,,"
+        "2027-01-15,,,\n",
+    )
+    risks = read_register(path)
+
+    assert risks[0].days_undecided(AS_OF) == -125
+    results = evaluate(risks, Policy(max_undecided_days=0), AS_OF)
+
+    assert results[0].detail == (
+        "0 decisions outstanding longer than 0 days; "
+        "1 undecided with no usable opening date and could not be timed"
+    )
+
+
+def test_a_negative_wait_is_never_printed(tmp_path):
+    path = write(
+        tmp_path,
+        "AI-1,Planned,CTO,Approve the pilot,high,likely,strong,open,2027-06-01,asserted,,"
+        "2027-01-15,,,\n",
+    )
+    report = render_dashboard(read_register(path), AS_OF)
+
+    assert "-125" not in report
+    assert "dated 2027-01-15, after this report" in report
+
+
+def test_a_decision_due_before_the_risk_opened_is_refused(tmp_path):
+    path = write(
+        tmp_path,
+        "AI-1,S,O,Decide,high,likely,strong,open,2027-01-01,asserted,,2026-06-01,2026-01-01,,\n",
+    )
+
+    with pytest.raises(RegisterError, match="a decision cannot be required before the risk"):
+        read_register(path)
+
+
+def test_a_decision_taken_on_a_reopened_risk_is_counted(tmp_path):
+    before = write(
+        tmp_path / "a",
+        "AI-1,S,O,Decide,high,likely,strong,closed,2027-01-01,asserted,,2026-01-01,,,\n",
+    )
+    after = write(
+        tmp_path / "b",
+        "AI-1,S,O,Decide,high,likely,strong,open,2027-01-01,asserted,,2026-01-01,,2026-05-01,CTO\n",
+    )
+
+    diff = diff_registers(read_register(before), read_register(after), AS_OF)
+
+    assert [change.id for change in diff.reopened] == ["AI-1"]
+    assert [change.id for change in diff.decisions_taken] == ["AI-1"]

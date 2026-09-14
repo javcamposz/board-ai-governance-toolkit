@@ -68,8 +68,9 @@ The dashboard now says where each required decision stands rather than repeating
 > declined to take. Record it as accepted, or set a date by which it will be.
 
 Two thresholds enforce it: `--max-undecided-days` for decisions left outstanding, and
-`--max-overdue-decisions` for those past the date they were required by. Risks with no opening
-date cannot be timed and are named as untestable rather than quietly passed.
+`--max-overdue-decisions` for those past the date they were required by. An undecided risk with no
+usable opening date, including one the register dates after the reporting date, cannot be timed and
+is named as untestable rather than quietly passed, the same way risk age already treats it.
 
 ## An Approval Can Be Overtaken
 
