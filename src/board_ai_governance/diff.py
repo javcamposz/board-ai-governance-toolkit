@@ -20,6 +20,9 @@ TRACKED_FIELDS = (
     "assurance",
     "evidence",
     "date_opened",
+    "decision_due",
+    "decided_on",
+    "decided_by",
 )
 
 
@@ -72,6 +75,24 @@ class RiskChange:
         return "unchanged"
 
     @property
+    def decision_predates_escalation(self) -> bool:
+        """The decision was taken when the risk was smaller than it is now.
+
+        An approval given for a high risk does not automatically cover a critical one, and
+        an unchanged decision date is how that goes unnoticed.
+        """
+        return (
+            self.before.is_decided
+            and self.after.is_decided
+            and self.before.decided_on == self.after.decided_on
+            and self.level_direction == "escalated"
+        )
+
+    @property
+    def decision_withdrawn(self) -> bool:
+        return self.before.is_decided and not self.after.is_decided
+
+    @property
     def lost_evidence(self) -> bool:
         return self.before.is_evidenced and not self.after.is_evidenced
 
@@ -116,6 +137,26 @@ class RegisterDiff:
     @property
     def weakened_controls(self) -> tuple[RiskChange, ...]:
         return tuple(change for change in self.changed if change.control_direction == "weakened")
+
+    @property
+    def stale_approvals(self) -> tuple[RiskChange, ...]:
+        return tuple(
+            change for change in self.changed + self.reopened
+            if change.decision_predates_escalation
+        )
+
+    @property
+    def withdrawn_decisions(self) -> tuple[RiskChange, ...]:
+        return tuple(
+            change for change in self.changed + self.reopened if change.decision_withdrawn
+        )
+
+    @property
+    def decisions_taken(self) -> tuple[RiskChange, ...]:
+        return tuple(
+            change for change in self.changed
+            if not change.before.is_decided and change.after.is_decided
+        )
 
     @property
     def weakened_assurance(self) -> tuple[RiskChange, ...]:
@@ -205,6 +246,8 @@ def render_diff(diff: RegisterDiff) -> str:
         f"- Removed while still active: {len(diff.dropped)}",
         f"- Reviews moved later: {len(diff.slipped)}",
         f"- Assurance weakened or evidence withdrawn: {len(diff.weakened_assurance)}",
+        f"- Decisions taken: {len(diff.decisions_taken)}",
+        f"- Approvals overtaken by escalation: {len(diff.stale_approvals)}",
         f"- Accountable owner changed: {len(diff.owner_changes)}",
         f"- Unchanged: {len(diff.unchanged)}",
         "",
@@ -228,6 +271,18 @@ def render_diff(diff: RegisterDiff) -> str:
         challenges.append(
             f"- **{change.id} / {change.after.system}** control strength fell from "
             f"{change.before.control_strength} to {change.after.control_strength}."
+        )
+    for change in diff.stale_approvals:
+        challenges.append(
+            f"- **{change.id} / {change.after.system}** was decided on "
+            f"{change.after.decided_on.isoformat()} by {change.after.decided_by}, when it was "
+            f"{change.before.level}. It is now {change.after.level} and the decision has not "
+            "been revisited. An approval given for a smaller risk does not cover this one."
+        )
+    for change in diff.withdrawn_decisions:
+        challenges.append(
+            f"- **{change.id} / {change.after.system}** no longer records a decision; "
+            f"{change.before.decided_on.isoformat()} by {change.before.decided_by} was removed."
         )
     for change in diff.weakened_assurance:
         if change.lost_evidence:

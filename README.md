@@ -43,6 +43,45 @@ Removed while still active: 1
 
 The change report leads with what requires explanation: risks that left the register without being closed, escalations, controls that weakened, accountable owners that changed, and review dates pushed out after they had already fallen due. Repeated slippage is visible in days, not in reassurance.
 
+## Decisions Required, And Decisions Taken
+
+Every risk carries the decision it puts at risk, and the dashboard listed the same ask every
+quarter with no record that it had been asked before. `docs/decision-rights.md` says who must
+approve what and `templates/decision-memo.md` asks for exactly these fields; neither touched the
+data.
+
+Three optional columns close that loop: `decision_due`, `decided_on`, and `decided_by`. A
+`decided_on` with no `decided_by` is refused, because a decision without a named decider is not
+accountable, and a decision dated before the risk opened is refused as incoherent.
+
+The dashboard now says where each required decision stands rather than repeating the ask:
+
+```text
+## Decisions Outstanding
+
+| ID | System | Decision | Owner | Asked for | Due | Overdue by |
+|---|---|---|---|---:|---|---:|
+| AI-003 | Developer coding assistant | Set the permitted autonomy boundary | Chief Technology Officer | 54 days | 2026-08-31 | 12 |
+```
+
+> A decision that has been required for several reporting cycles is a decision the board has
+> declined to take. Record it as accepted, or set a date by which it will be.
+
+Two thresholds enforce it: `--max-undecided-days` for decisions left outstanding, and
+`--max-overdue-decisions` for those past the date they were required by. Risks with no opening
+date cannot be timed and are named as untestable rather than quietly passed.
+
+## An Approval Can Be Overtaken
+
+`ai-board diff` reports a risk whose decision was taken when it was smaller than it is now:
+
+> **AI-002 / Recruitment ranking pilot** was decided on 2026-05-20 by Chief People Officer, when it
+> was high. It is now critical and the decision has not been revisited. An approval given for a
+> smaller risk does not cover this one.
+
+A decision that disappears between snapshots is reported too. Neither is visible in a single
+snapshot, which is why both live in the change report.
+
 ## Enforce A Policy
 
 A register that reports a breach but never fails is a document, not a control. `ai-board check` tests a
@@ -115,6 +154,13 @@ error: register.csv: 3 problems
 | `assurance` | Optional. `asserted`, `tested`, or `independent`: who verified the control rating |
 | `evidence` | Optional. Reference to the evidence behind the rating, such as a memo or review |
 | `date_opened` | Optional. ISO date the risk joined the register |
+| `decision_due` | Optional. ISO date the decision is required by |
+| `decided_on` | Optional. ISO date the decision was taken; blank means outstanding |
+| `decided_by` | Optional. Who took it; required whenever `decided_on` is set |
+
+Dates are read as `YYYY-MM-DD` and only that shape. Python's own ISO parser widened in 3.11, so
+`20261015` would be accepted on 3.12 and rejected on 3.10; the shape is checked before parsing so
+both supported versions agree.
 
 A register without the optional columns still loads. Every risk in it is read as `asserted` with no
 evidence, which is the pessimistic reading and usually the accurate one, and its age is not reported.

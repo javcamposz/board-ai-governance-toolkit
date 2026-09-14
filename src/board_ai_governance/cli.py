@@ -32,6 +32,9 @@ def _summarize(args: argparse.Namespace) -> int:
     print(f"Controls with no evidence recorded: {len(portfolio.unevidenced)}")
     if portfolio.undated:
         print(f"Active risks with no opening date: {len(portfolio.undated)}")
+    print(f"Decisions outstanding: {len(portfolio.undecided)}"
+          + (f", {len(portfolio.decisions_overdue)} past their due date"
+             if portfolio.decisions_overdue else ""))
     if args.output:
         print(f"Dashboard written to {args.output}")
     return EXIT_OK
@@ -54,6 +57,8 @@ def _check(args: argparse.Namespace) -> int:
         max_high=args.max_high,
         max_overdue=args.max_overdue,
         max_open_days=args.max_open_days,
+        max_undecided_days=args.max_undecided_days,
+        max_overdue_decisions=args.max_overdue_decisions,
         require_evidence_for=args.require_evidence_for or frozenset(),
     )
     results = evaluate(risks, policy, args.as_of)
@@ -61,7 +66,8 @@ def _check(args: argparse.Namespace) -> int:
     print(f"Validated {len(risks)} AI risks as of {args.as_of.isoformat()}")
     if policy.is_empty:
         print("No thresholds were set, so nothing was tested. Pass --max-critical, --max-high, "
-              "--max-overdue, --max-open-days, or --require-evidence-for to enforce a policy.")
+              "--max-overdue, --max-open-days, --max-undecided-days, "
+              "--max-overdue-decisions, or --require-evidence-for to enforce a policy.")
         return EXIT_OK
 
     for result in results:
@@ -117,6 +123,16 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--max-high", type=int, help="maximum active high risks")
     check.add_argument("--max-overdue", type=int, help="maximum active risks past their review date")
     check.add_argument("--max-open-days", type=int, help="maximum days an active risk may have been open")
+    check.add_argument(
+        "--max-undecided-days",
+        type=int,
+        help="maximum days a decision may remain outstanding on an active risk",
+    )
+    check.add_argument(
+        "--max-overdue-decisions",
+        type=int,
+        help="maximum active decisions past the date they were required by",
+    )
     check.add_argument(
         "--require-evidence-for",
         type=_levels,

@@ -26,7 +26,12 @@ jobs:
       - run: ai-board summarize examples/ai-risk-register.csv --as-of 2026-09-12 --output board-summary.md
       - run: ai-board summarize templates/ai-risk-register.csv --as-of 2026-09-12 --output /dev/null
       - run: ai-board diff examples/ai-risk-register-previous.csv examples/ai-risk-register.csv --as-of 2026-09-12 --output change-report.md
-      - run: ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-critical 1 --max-overdue 1 --max-open-days 400
+      - run: ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-critical 1 --max-overdue 1 --max-open-days 400 --max-undecided-days 90
+      - name: an overdue decision must fail the gate
+        run: |
+          if ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-overdue-decisions 0; then
+            echo 'expected a non-zero exit for an overdue decision' && exit 1
+          fi
       - name: check fails on a breached threshold
         run: |
           if ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-critical 0; then

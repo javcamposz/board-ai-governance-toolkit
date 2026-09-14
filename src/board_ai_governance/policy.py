@@ -16,6 +16,8 @@ class Policy:
     max_high: int | None = None
     max_overdue: int | None = None
     max_open_days: int | None = None
+    max_undecided_days: int | None = None
+    max_overdue_decisions: int | None = None
     require_evidence_for: frozenset[str] = field(default_factory=frozenset)
 
     @property
@@ -25,6 +27,8 @@ class Policy:
             self.max_high is not None,
             self.max_overdue is not None,
             self.max_open_days is not None,
+            self.max_undecided_days is not None,
+            self.max_overdue_decisions is not None,
             self.require_evidence_for,
         ))
 
@@ -111,6 +115,46 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
             subjects=tuple(
                 f"{risk.id} {risk.system} open {risk.age_days(as_of)} days since "
                 f"{risk.date_opened.isoformat()}, still {risk.status}"
+                for risk in matched
+            ),
+        ))
+
+    if policy.max_undecided_days is not None:
+        # A decision the board has been asked for across several cycles and not given is a
+        # decision by default. Risks with no opening date cannot be timed, so they are named.
+        timed = [risk for risk in active if not risk.is_decided and risk.date_opened is not None]
+        matched = sorted(
+            (risk for risk in timed if (risk.days_undecided(as_of) or 0) > policy.max_undecided_days),
+            key=lambda risk: (risk.date_opened, risk.id),
+        )
+        untimed = sum(1 for risk in active if not risk.is_decided and risk.date_opened is None)
+        noun = "decision" if len(matched) == 1 else "decisions"
+        detail = f"{len(matched)} {noun} outstanding longer than {policy.max_undecided_days} days"
+        if untimed:
+            detail += f"; {untimed} undecided with no opening date and could not be timed"
+        results.append(Result(
+            rule="undecided",
+            passed=not matched,
+            detail=detail,
+            subjects=tuple(
+                f"{risk.id} {risk.system}: {risk.decision.rstrip('.')} "
+                f"({risk.days_undecided(as_of)} days, owner {risk.owner})"
+                for risk in matched
+            ),
+        ))
+
+    if policy.max_overdue_decisions is not None:
+        matched = sorted(
+            (risk for risk in active if not risk.is_decided and risk.decision_overdue_days(as_of)),
+            key=lambda risk: (risk.decision_due, risk.id),
+        )
+        results.append(Result(
+            rule="overdue decisions",
+            passed=len(matched) <= policy.max_overdue_decisions,
+            detail=f"{len(matched)} past their due date (limit {policy.max_overdue_decisions})",
+            subjects=tuple(
+                f"{risk.id} {risk.system} was due {risk.decision_due.isoformat()}, "
+                f"{risk.decision_overdue_days(as_of)} days ago ({risk.owner})"
                 for risk in matched
             ),
         ))
