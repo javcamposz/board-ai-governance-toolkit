@@ -54,7 +54,9 @@ Three optional columns close that loop: `decision_due`, `decided_on`, and `decid
 `decided_on` with no `decided_by` is refused, because a decision without a named decider is not
 accountable, and a decision dated before the risk opened is refused as incoherent.
 
-The dashboard now says where each required decision stands rather than repeating the ask:
+The dashboard now says where each elevated risk's decision stands rather than repeating the ask, and
+tables every outstanding decision separately, at any level. The two are distinct: a decision can be
+outstanding on a risk that is not elevated, and an elevated risk can have had its decision taken.
 
 ```text
 ## Decisions Outstanding

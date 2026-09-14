@@ -449,13 +449,21 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         lines.append("")
         lines.append(f"{len(ranked) - 10} further active risks are not shown; the full register remains the record.")
 
-    lines.extend(["", "## Decisions Required", ""])
+    # Headed by what it lists. Adding decision state to this section made "Decisions
+    # Required" false: an elevated risk whose decision has been taken still belongs here,
+    # and the decision that is actually outstanding may sit below the elevated threshold.
+    lines.extend(["", "## Elevated Risks And Their Decisions", ""])
     if elevated:
         for risk in elevated:
             lines.append(
                 f"- **{risk.id} / {risk.system}:** {risk.decision.rstrip('.')}. "
                 f"Accountable owner: {risk.owner}. {_decision_state(risk, as_of)}"
             )
+        lines.append("")
+        lines.append(
+            "Decisions still outstanding are listed below, at every level rather than only "
+            "the elevated ones."
+        )
     else:
         lines.append("- No high or critical active risk is recorded; challenge whether the register is complete.")
 

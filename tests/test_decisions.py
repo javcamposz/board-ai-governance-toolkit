@@ -101,11 +101,26 @@ def test_a_register_without_the_decision_columns_still_loads(tmp_path):
 
 # --- the dashboard ---
 
-def test_the_dashboard_says_where_each_required_decision_stands():
+def test_the_dashboard_says_where_each_elevated_risk_decision_stands():
     report = render_dashboard(read_register(EXAMPLE), AS_OF)
-    section = report.split("## Decisions Required", 1)[1].split("## Decisions Outstanding", 1)[0]
+    section = report.split("## Elevated Risks And Their Decisions", 1)[1]
+    section = section.split("## Decisions Outstanding", 1)[0]
 
     assert "Decided 2026-05-20 by Chief People Officer." in section
+    assert "Decisions still outstanding are listed below" in section
+
+
+def test_the_elevated_section_is_not_headed_as_the_outstanding_one():
+    """AI-002 is elevated and decided; AI-003 is the one actually outstanding, and is medium."""
+    report = render_dashboard(read_register(EXAMPLE), AS_OF)
+
+    assert "## Decisions Required" not in report
+    elevated = report.split("## Elevated Risks And Their Decisions", 1)[1]
+    elevated = elevated.split("## Decisions Outstanding", 1)[0]
+    outstanding = report.split("## Decisions Outstanding", 1)[1].split("## Decisions Taken", 1)[0]
+
+    assert "AI-002" in elevated and "AI-003" not in elevated
+    assert "AI-003" in outstanding and "AI-002" not in outstanding
 
 
 def test_an_outstanding_decision_is_tabled_with_how_long_it_has_waited():
