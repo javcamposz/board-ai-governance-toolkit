@@ -122,16 +122,20 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
     if policy.max_undecided_days is not None:
         # A decision the board has been asked for across several cycles and not given is a
         # decision by default. Risks with no opening date cannot be timed, so they are named.
-        timed = [risk for risk in active if not risk.is_decided and risk.date_opened is not None]
+        # A risk the register dates after the reporting date has no meaningful wait, so it
+        # is untestable rather than compliant, exactly as the age rule treats it.
+        outstanding = [risk for risk in active if not risk.is_decided]
+        waits = {risk.id: risk.days_undecided(as_of) for risk in outstanding}
+        timed = [risk for risk in outstanding if (waits[risk.id] or 0) >= 0 and risk.date_opened]
         matched = sorted(
-            (risk for risk in timed if (risk.days_undecided(as_of) or 0) > policy.max_undecided_days),
+            (risk for risk in timed if waits[risk.id] > policy.max_undecided_days),
             key=lambda risk: (risk.date_opened, risk.id),
         )
-        untimed = sum(1 for risk in active if not risk.is_decided and risk.date_opened is None)
+        untimed = len(outstanding) - len(timed)
         noun = "decision" if len(matched) == 1 else "decisions"
         detail = f"{len(matched)} {noun} outstanding longer than {policy.max_undecided_days} days"
         if untimed:
-            detail += f"; {untimed} undecided with no opening date and could not be timed"
+            detail += f"; {untimed} undecided with no usable opening date and could not be timed"
         results.append(Result(
             rule="undecided",
             passed=not matched,

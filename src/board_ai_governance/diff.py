@@ -154,7 +154,7 @@ class RegisterDiff:
     @property
     def decisions_taken(self) -> tuple[RiskChange, ...]:
         return tuple(
-            change for change in self.changed
+            change for change in self.changed + self.reopened
             if not change.before.is_decided and change.after.is_decided
         )
 
