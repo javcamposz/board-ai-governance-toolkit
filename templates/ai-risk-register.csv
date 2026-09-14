@@ -1,2 +1,2 @@
-id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence,date_opened
-AI-001,Name the AI system or use case,Name the accountable role,State the decision or outcome at risk,medium,possible,weak,open,2026-12-31,asserted,,2026-01-01
+id,system,owner,decision,impact,likelihood,control_strength,status,next_review,assurance,evidence,date_opened,decision_due,decided_on,decided_by
+AI-001,Name the AI system or use case,Name the accountable role,State the decision or outcome at risk,medium,possible,weak,open,2026-12-31,asserted,,2026-01-01,2026-03-31,,

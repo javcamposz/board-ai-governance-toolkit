@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -16,7 +17,11 @@ REQUIRED_FIELDS = (
     "status",
     "next_review",
 )
-OPTIONAL_FIELDS = ("assurance", "evidence", "date_opened")
+OPTIONAL_FIELDS = ("assurance", "evidence", "date_opened", "decision_due", "decided_on", "decided_by")
+# date.fromisoformat took the whole ISO 8601 set from Python 3.11, so "20261015" parses
+# there and is rejected on 3.10. Both are supported, so the shape is checked first and
+# only the documented one reaches the parser.
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # Spreadsheet habits that mean "no evidence". Accepting them as a reference would let one
 # keystroke buy the full assurance credit, so the register is asked to leave the cell blank.
 NULL_EVIDENCE = {"n/a", "n.a.", "na", "none", "nil", "tbd", "tbc", "pending", "unknown", "-", "--", "?"}
@@ -56,6 +61,26 @@ class Risk:
     assurance: str = NO_ASSURANCE
     evidence: str = ""
     date_opened: date | None = None
+    decision_due: date | None = None
+    decided_on: date | None = None
+    decided_by: str = ""
+
+    @property
+    def is_decided(self) -> bool:
+        return self.decided_on is not None
+
+    def days_undecided(self, as_of: date) -> int | None:
+        """How long the board has been asked for this decision without answering."""
+        if self.is_decided or self.date_opened is None:
+            return None
+        return (as_of - self.date_opened).days
+
+    def decision_overdue_days(self, as_of: date) -> int | None:
+        """Days past the date the decision was required by, when one was set."""
+        if self.is_decided or self.decision_due is None:
+            return None
+        overdue = (as_of - self.decision_due).days
+        return overdue if overdue > 0 else None
 
     def age_days(self, as_of: date) -> int | None:
         """How long the risk has been on the register, when the register says."""
@@ -136,6 +161,19 @@ def _choice(
     return normalized
 
 
+def _iso_date(row_number: int, field: str, value: str, problems: list[str]) -> date | None:
+    """Parse a documented date, or record why it could not be parsed."""
+    text = value.strip()
+    if not ISO_DATE.match(text):
+        problems.append(f"row {row_number}: {field} must be YYYY-MM-DD")
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        problems.append(f"row {row_number}: {field} is {text}, which is not a real date")
+        return None
+
+
 def _required(row_number: int, field: str, value: str, problems: list[str]) -> str | None:
     text = value.strip()
     if not text:
@@ -161,34 +199,46 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
     control = _choice(row_number, "control_strength", row["control_strength"] or "", CONTROL_FACTOR, problems)
     status = _choice(row_number, "status", row["status"] or "", STATUSES, problems)
 
-    review: date | None = None
-    try:
-        review = date.fromisoformat((row["next_review"] or "").strip())
-    except ValueError:
-        problems.append(f"row {row_number}: next_review must be YYYY-MM-DD")
+    review = _iso_date(row_number, "next_review", row["next_review"] or "", problems)
 
     # Absent or blank assurance is read as an assertion, never as verification.
     raw_assurance = (row.get("assurance") or "").strip()
     assurance: str | None = NO_ASSURANCE
     if raw_assurance:
         assurance = _choice(row_number, "assurance", raw_assurance, ASSURANCE_CREDIT, problems)
-    # date_opened is optional, so an absent value is not a problem but an unreadable one is.
-    raw_opened = (row.get("date_opened") or "").strip()
-    opened: date | None = None
-    opened_is_unreadable = False
-    if raw_opened:
-        try:
-            opened = date.fromisoformat(raw_opened)
-        except ValueError:
-            problems.append(f"row {row_number}: date_opened must be YYYY-MM-DD")
-            opened_is_unreadable = True
+    # The optional dates are absent or readable; absent is not a problem, unreadable is.
+    optional_dates: dict[str, date | None] = {}
+    unreadable = False
+    for field in ("date_opened", "decision_due", "decided_on"):
+        raw = (row.get(field) or "").strip()
+        if not raw:
+            optional_dates[field] = None
+            continue
+        parsed = _iso_date(row_number, field, raw, problems)
+        optional_dates[field] = parsed
+        unreadable = unreadable or parsed is None
+    opened = optional_dates["date_opened"]
+
+    decided_by = (row.get("decided_by") or "").strip()
+    if optional_dates["decided_on"] is not None and not decided_by:
+        problems.append(
+            f"row {row_number}: decided_on is set but decided_by is empty; "
+            "a decision without a named decider is not accountable"
+        )
+        unreadable = True
+    if optional_dates["decided_on"] is not None and opened is not None and optional_dates["decided_on"] < opened:
+        problems.append(
+            f"row {row_number}: decided_on {optional_dates['decided_on'].isoformat()} is before "
+            f"date_opened {opened.isoformat()}; a decision cannot precede the risk"
+        )
+        unreadable = True
 
     if opened is not None and review is not None and opened > review:
         problems.append(
             f"row {row_number}: date_opened {opened.isoformat()} is after next_review "
             f"{review.isoformat()}; a risk cannot be reviewed before it was opened"
         )
-        opened_is_unreadable = True
+        unreadable = True
 
     evidence = (row.get("evidence") or "").strip()
     if evidence.lower() in NULL_EVIDENCE:
@@ -198,7 +248,7 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
         evidence = None
 
     fields = (risk_id, system, owner, decision, impact, likelihood, control, status, review, assurance, evidence)
-    if None in fields or opened_is_unreadable:
+    if None in fields or unreadable:
         return None
     return Risk(
         id=risk_id,
@@ -213,6 +263,9 @@ def _read_row(row_number: int, row: dict[str, str], seen: set[str], problems: li
         assurance=assurance,
         evidence=evidence,
         date_opened=opened,
+        decision_due=optional_dates["decision_due"],
+        decided_on=optional_dates["decided_on"],
+        decided_by=decided_by,
     )
 
 
@@ -299,6 +352,25 @@ class Portfolio:
         return tuple(risk for risk in self.active if risk.date_opened is None)
 
     @property
+    def undecided(self) -> tuple[Risk, ...]:
+        """Active risks whose decision the board has been asked for and not given."""
+        return tuple(risk for risk in self.active if not risk.is_decided)
+
+    @property
+    def decisions_overdue(self) -> tuple[Risk, ...]:
+        return tuple(sorted(
+            (risk for risk in self.undecided if risk.decision_overdue_days(self.as_of)),
+            key=lambda risk: (risk.decision_due, risk.id),
+        ))
+
+    @property
+    def decided(self) -> tuple[Risk, ...]:
+        return tuple(sorted(
+            (risk for risk in self.active if risk.is_decided),
+            key=lambda risk: (risk.decided_on, risk.id),
+        ))
+
+    @property
     def records_no_assurance(self) -> bool:
         return bool(self.active) and not any(
             risk.is_evidenced or risk.assurance != NO_ASSURANCE for risk in self.active
@@ -310,6 +382,19 @@ class Portfolio:
             level: sum(risk.level == level for risk in self.active)
             for level in ("critical", "high", "medium", "low")
         }
+
+
+def _decision_state(risk: Risk, as_of: date) -> str:
+    """Say where the decision stands, so the same ask does not read the same every quarter."""
+    if risk.is_decided:
+        return f"Decided {risk.decided_on.isoformat()} by {risk.decided_by}."
+    overdue = risk.decision_overdue_days(as_of)
+    if overdue:
+        return f"Outstanding, and {overdue} days past the {risk.decision_due.isoformat()} it was due."
+    waited = risk.days_undecided(as_of)
+    if waited is not None:
+        return f"Outstanding for {waited} days."
+    return "Outstanding; no date recorded for when it was first required."
 
 
 def render_dashboard(risks: list[Risk], as_of: date) -> str:
@@ -357,10 +442,40 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         for risk in elevated:
             lines.append(
                 f"- **{risk.id} / {risk.system}:** {risk.decision.rstrip('.')}. "
-                f"Accountable owner: {risk.owner}."
+                f"Accountable owner: {risk.owner}. {_decision_state(risk, as_of)}"
             )
     else:
         lines.append("- No high or critical active risk is recorded; challenge whether the register is complete.")
+
+    lines.extend(["", "## Decisions Outstanding", ""])
+    outstanding = portfolio.undecided
+    if outstanding:
+        lines.append("| ID | System | Decision | Owner | Asked for | Due | Overdue by |")
+        lines.append("|---|---|---|---|---:|---|---:|")
+        for risk in sorted(outstanding, key=lambda item: (-item.score, item.id)):
+            waited = risk.days_undecided(as_of)
+            past_due = risk.decision_overdue_days(as_of)
+            lines.append(
+                f"| {risk.id} | {risk.system} | {risk.decision.rstrip('.')} | {risk.owner} | "
+                f"{'not recorded' if waited is None else f'{waited} days'} | "
+                f"{risk.decision_due.isoformat() if risk.decision_due else 'not set'} | "
+                f"{past_due if past_due else '-'} |"
+            )
+        lines.append("")
+        lines.append(
+            "A decision that has been required for several reporting cycles is a decision the "
+            "board has declined to take. Record it as accepted, or set a date by which it will be."
+        )
+    else:
+        lines.append("- Every active risk records a decision and who took it.")
+
+    if portfolio.decided:
+        lines.extend(["", "## Decisions Taken", ""])
+        for risk in portfolio.decided:
+            lines.append(
+                f"- **{risk.id} / {risk.system}:** decided {risk.decided_on.isoformat()} "
+                f"by {risk.decided_by}."
+            )
 
     lines.extend(["", "## Comfort Without Evidence", ""])
     if records_no_assurance:
