@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import date
 from pathlib import Path
 
 from .diff import diff_registers, render_diff
-from .policy import LEVELS, Policy, breached, evaluate
+from .policy import LEVELS, DecisionRights, Policy, breached, evaluate
 from .register import Portfolio, RegisterError, read_register, render_dashboard
 
 EXIT_OK = 0
@@ -40,6 +41,42 @@ def _summarize(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _read_rights(path: Path | None) -> DecisionRights | None:
+    """Decision rights are held outside the register, like the policy thresholds are."""
+    if path is None:
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RegisterError(path, [f"decision rights are not valid JSON: {exc}"]) from exc
+
+    problems: list[str] = []
+    if not isinstance(value, dict):
+        raise RegisterError(path, ["decision rights must be a JSON object of level to deciders"])
+
+    by_level: dict[str, tuple[str, ...]] = {}
+    for level in sorted(value):
+        if level not in LEVELS:
+            problems.append(f"{level} is not a level; the four are {', '.join(LEVELS)}")
+            continue
+        deciders = value[level]
+        if not isinstance(deciders, list) or not all(isinstance(name, str) for name in deciders):
+            problems.append(f"{level} must list deciders as strings")
+            continue
+        named = [name.strip() for name in deciders if name.strip()]
+        if not named:
+            problems.append(
+                f"{level} lists no decider; remove the level to leave it unconstrained "
+                "rather than declaring that nobody may decide"
+            )
+            continue
+        by_level[level] = tuple(named)
+
+    if problems:
+        raise RegisterError(path, problems)
+    return DecisionRights(by_level=by_level)
+
+
 def _levels(value: str) -> frozenset[str]:
     chosen = {level.strip().lower() for level in value.split(",") if level.strip()}
     if not chosen:
@@ -60,6 +97,7 @@ def _check(args: argparse.Namespace) -> int:
         max_undecided_days=args.max_undecided_days,
         max_overdue_decisions=args.max_overdue_decisions,
         require_evidence_for=args.require_evidence_for or frozenset(),
+        rights=_read_rights(args.rights),
     )
     results = evaluate(risks, policy, args.as_of)
 
@@ -67,7 +105,8 @@ def _check(args: argparse.Namespace) -> int:
     if policy.is_empty:
         print("No thresholds were set, so nothing was tested. Pass --max-critical, --max-high, "
               "--max-overdue, --max-open-days, --max-undecided-days, "
-              "--max-overdue-decisions, or --require-evidence-for to enforce a policy.")
+              "--max-overdue-decisions, --rights, or --require-evidence-for to "
+              "enforce a policy.")
         return EXIT_OK
 
     for result in results:
@@ -132,6 +171,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-overdue-decisions",
         type=int,
         help="maximum active decisions past the date they were required by",
+    )
+    check.add_argument(
+        "--rights",
+        type=Path,
+        help="JSON file of level to the roles that may decide at it, held outside the register",
     )
     check.add_argument(
         "--require-evidence-for",
