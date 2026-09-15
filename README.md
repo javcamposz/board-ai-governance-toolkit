@@ -106,9 +106,14 @@ ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --rights example
 
 ```text
 FAIL  decision rights: 1 decision taken without the authority the level requires
-        AI-002 Recruitment ranking pilot is critical and was decided by Chief People Officer;
-        at that level the decision rests with Board or Chief Executive
+        AI-002 Recruitment ranking pilot was decided by Chief People Officer, and is critical,
+        where the decision rests with Board or Chief Executive. It is critical only because the
+        control rating is unevidenced; evidenced it would be high, where that decider is authorised.
 ```
+
+The level read here is the assurance-adjusted one, so a risk can breach because its control rating
+is unevidenced rather than because the decider overstepped. Those are different remedies for
+different people, so the line says which applies.
 
 **Authority does not carry upward.** The level is read now rather than when the decision was taken,
 so a risk that escalated past the authority that approved it fails from a single register. The change

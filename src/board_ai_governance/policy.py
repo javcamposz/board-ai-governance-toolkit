@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -16,18 +17,31 @@ class DecisionRights:
     deciders would name the ones who had already decided.
     """
 
-    by_level: dict[str, tuple[str, ...]]
+    # A tuple of pairs rather than a dict, so frozen means what it says. The argument for
+    # this type is that the rights come from outside the register; a mapping a caller can
+    # still edit in place would not be that.
+    levels: tuple[tuple[str, tuple[str, ...]], ...]
+
+    @classmethod
+    def from_mapping(cls, by_level: Mapping[str, Sequence[str]]) -> DecisionRights:
+        return cls(tuple(
+            (level, tuple(by_level[level])) for level in LEVELS if level in by_level
+        ))
+
+    @property
+    def by_level(self) -> dict[str, tuple[str, ...]]:
+        return dict(self.levels)
 
     def deciders(self, level: str) -> tuple[str, ...]:
         return self.by_level.get(level, ())
 
     def constrains(self, level: str) -> bool:
-        return level in self.by_level
+        return any(declared == level for declared, _ in self.levels)
 
     def permits(self, level: str, decided_by: str) -> bool:
         if not self.constrains(level):
             return True
-        authorised = {name.strip().casefold() for name in self.by_level[level]}
+        authorised = {name.strip().casefold() for name in self.deciders(level)}
         return decided_by.strip().casefold() in authorised
 
 
@@ -67,6 +81,28 @@ class Result:
 
     def __str__(self) -> str:
         return f"{'PASS' if self.passed else 'FAIL'}  {self.rule}: {self.detail}"
+
+
+def _rights_breach(risk: Risk, rights: DecisionRights) -> str:
+    """Name who decided, at what level, and whether evidence alone would resolve it.
+
+    The level read here is the assurance-adjusted one, so a risk can breach because its
+    control rating is unevidenced rather than because the decider overstepped. Those are
+    different remedies for different people, and the line has to say which applies.
+    """
+    line = (
+        f"{risk.id} {risk.system} was decided by {risk.decided_by}, and is {risk.level}, "
+        f"where the decision rests with {' or '.join(rights.deciders(risk.level))}."
+    )
+    if risk.level == risk.face_value_level:
+        return line
+    line += (
+        f" It is {risk.level} only because the control rating is unevidenced; "
+        f"evidenced it would be {risk.face_value_level}"
+    )
+    if rights.permits(risk.face_value_level, risk.decided_by):
+        return line + ", where that decider is authorised."
+    return line + ", which is still above that decider."
 
 
 def _level_note(risk: Risk) -> str:
@@ -194,10 +230,11 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
             risk for risk in active
             if risk.is_decided and not policy.rights.permits(risk.level, risk.decided_by)
         ]
-        unconstrained = sorted({
+        seen = {
             risk.level for risk in active
             if risk.is_decided and not policy.rights.constrains(risk.level)
-        })
+        }
+        unconstrained = [level for level in LEVELS if level in seen]
         noun = "decision" if len(matched) == 1 else "decisions"
         detail = f"{len(matched)} {noun} taken without the authority the level requires"
         if unconstrained:
@@ -207,9 +244,7 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
             passed=not matched,
             detail=detail,
             subjects=tuple(
-                f"{risk.id} {risk.system} is {risk.level} and was decided by {risk.decided_by}; "
-                f"at that level the decision rests with "
-                f"{' or '.join(policy.rights.deciders(risk.level))}"
+                _rights_breach(risk, policy.rights)
                 for risk in sorted(matched, key=lambda item: (-item.score, item.id))
             ),
         ))

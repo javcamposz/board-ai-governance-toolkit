@@ -74,7 +74,7 @@ def _read_rights(path: Path | None) -> DecisionRights | None:
 
     if problems:
         raise RegisterError(path, problems)
-    return DecisionRights(by_level=by_level)
+    return DecisionRights.from_mapping(by_level)
 
 
 def _levels(value: str) -> frozenset[str]:
