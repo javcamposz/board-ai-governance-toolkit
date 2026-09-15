@@ -1,10 +1,11 @@
 """Board-level AI risk register tools."""
 
 from .diff import RegisterDiff, RiskChange, diff_registers, render_diff
-from .policy import Policy, Result, breached, evaluate
+from .policy import DecisionRights, Policy, Result, breached, evaluate
 from .register import Elapsed, Portfolio, RegisterError, Risk, read_register, render_dashboard
 
 __all__ = [
+    "DecisionRights",
     "Elapsed",
     "Policy",
     "Portfolio",

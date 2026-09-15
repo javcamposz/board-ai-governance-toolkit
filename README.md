@@ -85,6 +85,40 @@ is named as untestable rather than quietly passed, the same way risk age already
 A decision that disappears between snapshots is reported too. Neither is visible in a single
 snapshot, which is why both live in the change report.
 
+## Did The Right Authority Decide?
+
+[`docs/decision-rights.md`](docs/decision-rights.md) maps decisions to who may approve them, and was
+prose the toolkit could not read. The register records `decided_by` as free text, so a critical risk
+signed off by a delegate looked exactly like one the board approved.
+
+Declare the rights beside the policy, outside the register, for the reason the thresholds are:
+
+```json
+{
+  "critical": ["Board", "Chief Executive"],
+  "high": ["Chief Risk Officer", "Chief Technology Officer", "Chief People Officer"]
+}
+```
+
+```bash
+ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --rights examples/decision-rights.json
+```
+
+```text
+FAIL  decision rights: 1 decision taken without the authority the level requires
+        AI-002 Recruitment ranking pilot is critical and was decided by Chief People Officer;
+        at that level the decision rests with Board or Chief Executive
+```
+
+**Authority does not carry upward.** The level is read now rather than when the decision was taken,
+so a risk that escalated past the authority that approved it fails from a single register. The change
+report finds the same thing by comparing two snapshots; with rights declared you do not need the
+second one.
+
+A level absent from the file is unconstrained, and the result says which levels those were rather
+than letting silence read as approval. A level declaring an empty list is refused, because "nobody
+may decide" and "we have not said" should not look alike.
+
 ## Enforce A Policy
 
 A register that reports a breach but never fails is a document, not a control. `ai-board check` tests a

@@ -1,0 +1,10 @@
+{
+  "critical": ["Board", "Chief Executive"],
+  "high": ["Chief Risk Officer", "Chief Technology Officer", "Chief People Officer"],
+  "medium": [
+    "Chief Risk Officer",
+    "Chief Technology Officer",
+    "Chief People Officer",
+    "Customer Operations Director"
+  ]
+}

@@ -9,6 +9,29 @@ LEVELS = ("low", "medium", "high", "critical")
 
 
 @dataclass(frozen=True)
+class DecisionRights:
+    """Who may take a decision at each level of exposure.
+
+    Declared outside the register, because a register that named its own acceptable
+    deciders would name the ones who had already decided.
+    """
+
+    by_level: dict[str, tuple[str, ...]]
+
+    def deciders(self, level: str) -> tuple[str, ...]:
+        return self.by_level.get(level, ())
+
+    def constrains(self, level: str) -> bool:
+        return level in self.by_level
+
+    def permits(self, level: str, decided_by: str) -> bool:
+        if not self.constrains(level):
+            return True
+        authorised = {name.strip().casefold() for name in self.by_level[level]}
+        return decided_by.strip().casefold() in authorised
+
+
+@dataclass(frozen=True)
 class Policy:
     """Thresholds an organization is willing to be held to between board meetings."""
 
@@ -19,6 +42,7 @@ class Policy:
     max_undecided_days: int | None = None
     max_overdue_decisions: int | None = None
     require_evidence_for: frozenset[str] = field(default_factory=frozenset)
+    rights: DecisionRights | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -30,6 +54,7 @@ class Policy:
             self.max_undecided_days is not None,
             self.max_overdue_decisions is not None,
             self.require_evidence_for,
+            self.rights is not None,
         ))
 
 
@@ -158,6 +183,34 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
                 f"{risk.id} {risk.system} was due {risk.decision_due.isoformat()}, "
                 f"{risk.decision_overdue_days(as_of)} days ago ({risk.owner})"
                 for risk in matched
+            ),
+        ))
+
+    if policy.rights is not None:
+        # A decision taken at one level does not carry to a higher one. Because the level
+        # is read now rather than when the decision was taken, a risk that escalated past
+        # the authority that approved it fails here from a single register.
+        matched = [
+            risk for risk in active
+            if risk.is_decided and not policy.rights.permits(risk.level, risk.decided_by)
+        ]
+        unconstrained = sorted({
+            risk.level for risk in active
+            if risk.is_decided and not policy.rights.constrains(risk.level)
+        })
+        noun = "decision" if len(matched) == 1 else "decisions"
+        detail = f"{len(matched)} {noun} taken without the authority the level requires"
+        if unconstrained:
+            detail += f"; no rights declared for {', '.join(unconstrained)}"
+        results.append(Result(
+            rule="decision rights",
+            passed=not matched,
+            detail=detail,
+            subjects=tuple(
+                f"{risk.id} {risk.system} is {risk.level} and was decided by {risk.decided_by}; "
+                f"at that level the decision rests with "
+                f"{' or '.join(policy.rights.deciders(risk.level))}"
+                for risk in sorted(matched, key=lambda item: (-item.score, item.id))
             ),
         ))
 
