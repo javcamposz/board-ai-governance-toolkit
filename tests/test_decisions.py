@@ -300,7 +300,9 @@ def test_a_risk_dated_after_the_report_cannot_quietly_pass_the_undecided_rule(tm
     )
     risks = read_register(path)
 
-    assert risks[0].days_undecided(AS_OF) == -125
+    # The negative no longer escapes the accessor, so no caller can forget to guard it.
+    assert risks[0].days_undecided(AS_OF) is None
+    assert risks[0].undecided_for(AS_OF).is_future
     results = evaluate(risks, Policy(max_undecided_days=0), AS_OF)
 
     assert results[0].detail == (

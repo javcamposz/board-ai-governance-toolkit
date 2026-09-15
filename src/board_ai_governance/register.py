@@ -48,6 +48,47 @@ class RegisterError(ValueError):
 
 
 @dataclass(frozen=True)
+class Elapsed:
+    """Days between a date the register records and the date being reported on.
+
+    A date the register places after the report has no meaningful elapsed time. Returning a
+    signed integer made that every caller's problem to remember, and it was forgotten three
+    times: in the age gate, in the decision gate, and in two tables that printed a negative
+    number to a board. There is nothing to remember now, because there is no negative to
+    guard: an unusable date measures as None and says why.
+    """
+
+    since: date | None
+    as_of: date
+
+    @property
+    def is_recorded(self) -> bool:
+        return self.since is not None
+
+    @property
+    def is_future(self) -> bool:
+        return self.since is not None and self.since > self.as_of
+
+    @property
+    def days(self) -> int | None:
+        """Whole days elapsed, or None when the date is absent or still ahead."""
+        if self.since is None or self.is_future:
+            return None
+        return (self.as_of - self.since).days
+
+    @property
+    def is_measurable(self) -> bool:
+        return self.days is not None
+
+    def describe(self, absent: str = "not recorded") -> str:
+        if self.since is None:
+            return absent
+        if self.is_future:
+            return f"dated {self.since.isoformat()}, after this report"
+        return f"{self.days} days"
+
+
+@dataclass(frozen=True)
 class Risk:
     id: str
     system: str
@@ -69,24 +110,26 @@ class Risk:
     def is_decided(self) -> bool:
         return self.decided_on is not None
 
-    def days_undecided(self, as_of: date) -> int | None:
+    def opened_for(self, as_of: date) -> Elapsed:
+        """How long the risk has been on the register, when the register says."""
+        return Elapsed(since=self.date_opened, as_of=as_of)
+
+    def undecided_for(self, as_of: date) -> Elapsed:
         """How long the board has been asked for this decision without answering."""
-        if self.is_decided or self.date_opened is None:
-            return None
-        return (as_of - self.date_opened).days
+        return Elapsed(since=None if self.is_decided else self.date_opened, as_of=as_of)
+
+    def age_days(self, as_of: date) -> int | None:
+        return self.opened_for(as_of).days
+
+    def days_undecided(self, as_of: date) -> int | None:
+        return self.undecided_for(as_of).days
 
     def decision_overdue_days(self, as_of: date) -> int | None:
         """Days past the date the decision was required by, when one was set."""
-        if self.is_decided or self.decision_due is None:
+        if self.is_decided:
             return None
-        overdue = (as_of - self.decision_due).days
-        return overdue if overdue > 0 else None
-
-    def age_days(self, as_of: date) -> int | None:
-        """How long the risk has been on the register, when the register says."""
-        if self.date_opened is None:
-            return None
-        return (as_of - self.date_opened).days
+        overdue = Elapsed(since=self.decision_due, as_of=as_of).days
+        return overdue if overdue else None
 
     @property
     def is_evidenced(self) -> bool:
@@ -342,7 +385,7 @@ class Portfolio:
     def aged(self) -> tuple[Risk, ...]:
         """Active risks open on the reporting date, oldest first."""
         return tuple(sorted(
-            (risk for risk in self.active if (risk.age_days(self.as_of) or 0) >= 0 and risk.date_opened),
+            (risk for risk in self.active if risk.opened_for(self.as_of).is_measurable),
             key=lambda risk: (risk.date_opened, risk.id),
         ))
 
@@ -398,14 +441,14 @@ def _decision_state(risk: Risk, as_of: date) -> str:
     overdue = risk.decision_overdue_days(as_of)
     if overdue:
         return f"Outstanding, and {overdue} days past the {risk.decision_due.isoformat()} it was due."
-    waited = risk.days_undecided(as_of)
-    if waited is not None and waited < 0:
+    waited = risk.undecided_for(as_of)
+    if waited.is_future:
         return (
             f"Outstanding, but dated {risk.date_opened.isoformat()}, after this report; "
             "confirm the opening date before reading the wait."
         )
-    if waited is not None:
-        return f"Outstanding for {waited} days."
+    if waited.is_measurable:
+        return f"Outstanding for {waited.days} days."
     return "Outstanding; no date recorded for when it was first required."
 
 
@@ -473,17 +516,10 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         lines.append("| ID | System | Decision | Owner | Asked for | Due | Overdue by |")
         lines.append("|---|---|---|---|---:|---|---:|")
         for risk in sorted(outstanding, key=lambda item: (-item.score, item.id)):
-            waited = risk.days_undecided(as_of)
             past_due = risk.decision_overdue_days(as_of)
-            if waited is None:
-                asked = "not recorded"
-            elif waited < 0:
-                asked = f"dated {risk.date_opened.isoformat()}, after this report"
-            else:
-                asked = f"{waited} days"
             lines.append(
                 f"| {risk.id} | {risk.system} | {risk.decision.rstrip('.')} | {risk.owner} | "
-                f"{asked} | "
+                f"{risk.undecided_for(as_of).describe()} | "
                 f"{risk.decision_due.isoformat() if risk.decision_due else 'not set'} | "
                 f"{past_due if past_due else '-'} |"
             )

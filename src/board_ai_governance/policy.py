@@ -95,10 +95,9 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
     if policy.max_open_days is not None:
         # A risk dated after the reporting date has no meaningful age, so it is untestable
         # rather than compliant. Counting it as a pass would let a wrong date clear the gate.
-        ages = {risk.id: risk.age_days(as_of) for risk in active}
-        testable = [risk for risk in active if (ages[risk.id] or 0) >= 0 and risk.date_opened]
+        testable = [risk for risk in active if risk.opened_for(as_of).is_measurable]
         matched = sorted(
-            (risk for risk in testable if ages[risk.id] > policy.max_open_days),
+            (risk for risk in testable if risk.age_days(as_of) > policy.max_open_days),
             key=lambda risk: (risk.date_opened, risk.id),
         )
         untestable = len(active) - len(testable)
@@ -125,10 +124,9 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
         # A risk the register dates after the reporting date has no meaningful wait, so it
         # is untestable rather than compliant, exactly as the age rule treats it.
         outstanding = [risk for risk in active if not risk.is_decided]
-        waits = {risk.id: risk.days_undecided(as_of) for risk in outstanding}
-        timed = [risk for risk in outstanding if (waits[risk.id] or 0) >= 0 and risk.date_opened]
+        timed = [risk for risk in outstanding if risk.undecided_for(as_of).is_measurable]
         matched = sorted(
-            (risk for risk in timed if waits[risk.id] > policy.max_undecided_days),
+            (risk for risk in timed if risk.days_undecided(as_of) > policy.max_undecided_days),
             key=lambda risk: (risk.date_opened, risk.id),
         )
         untimed = len(outstanding) - len(timed)
