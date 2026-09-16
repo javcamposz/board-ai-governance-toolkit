@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from .diff import diff_registers, render_diff
+from .inventory import TIERS, Inventory
 from .policy import LEVELS, DecisionRights, Policy, breached, evaluate
 from .register import Portfolio, RegisterError, read_register, render_dashboard
 
@@ -24,7 +25,8 @@ def _emit(report: str, output: Path | None) -> None:
 
 def _summarize(args: argparse.Namespace) -> int:
     risks = read_register(args.input)
-    _emit(render_dashboard(risks, args.as_of), args.output)
+    inventory = _read_inventory(args.inventory)
+    _emit(render_dashboard(risks, args.as_of, inventory), args.output)
     portfolio = Portfolio(as_of=args.as_of, risks=tuple(risks))
 
     print(f"Validated {len(risks)} AI risks")
@@ -33,12 +35,58 @@ def _summarize(args: argparse.Namespace) -> int:
     print(f"Controls with no evidence recorded: {len(portfolio.unevidenced)}")
     if portfolio.undated:
         print(f"Active risks with no opening date: {len(portfolio.undated)}")
+    if inventory is not None:
+        coverage = portfolio.coverage(inventory)
+        print(
+            f"Material systems with no current entry: {len(coverage.blind_spots)} of "
+            f"{coverage.material_count}"
+        )
+        if coverage.unlisted:
+            print(f"Recorded but not on the declared estate: {', '.join(coverage.unlisted)}")
     print(f"Decisions outstanding: {len(portfolio.undecided)}"
           + (f", {len(portfolio.decisions_overdue)} past their due date"
              if portfolio.decisions_overdue else ""))
     if args.output:
         print(f"Dashboard written to {args.output}")
     return EXIT_OK
+
+
+def _read_inventory(path: Path | None) -> Inventory | None:
+    """The estate is declared outside the register, like the anchors and the rights are."""
+    if path is None:
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RegisterError(path, [f"the system inventory is not valid JSON: {exc}"]) from exc
+    if not isinstance(value, dict) or not isinstance(value.get("systems"), list):
+        raise RegisterError(path, ['the inventory must be a JSON object with a "systems" array'])
+
+    problems: list[str] = []
+    seen: set[str] = set()
+    for index, record in enumerate(value["systems"]):
+        if not isinstance(record, dict):
+            problems.append(f"system {index} must be a JSON object")
+            continue
+        missing = sorted({"name", "tier"} - record.keys())
+        if missing:
+            problems.append(f"system {index} missing: {', '.join(missing)}")
+            continue
+        name = str(record["name"]).strip()
+        if not name:
+            problems.append(f"system {index} name must not be empty")
+            continue
+        if name.casefold() in seen:
+            problems.append(f"{name} is listed more than once")
+            continue
+        seen.add(name.casefold())
+        tier = str(record["tier"]).strip().lower()
+        if tier not in TIERS:
+            problems.append(f"{name} tier is {tier!r}; the two are {', '.join(TIERS)}")
+
+    if problems:
+        raise RegisterError(path, problems)
+    return Inventory.from_records(value["systems"])
 
 
 def _read_rights(path: Path | None) -> DecisionRights | None:
@@ -98,6 +146,7 @@ def _check(args: argparse.Namespace) -> int:
         max_overdue_decisions=args.max_overdue_decisions,
         require_evidence_for=args.require_evidence_for or frozenset(),
         rights=_read_rights(args.rights),
+        inventory=_read_inventory(args.inventory),
     )
     results = evaluate(risks, policy, args.as_of)
 
@@ -105,8 +154,8 @@ def _check(args: argparse.Namespace) -> int:
     if policy.is_empty:
         print("No thresholds were set, so nothing was tested. Pass --max-critical, --max-high, "
               "--max-overdue, --max-open-days, --max-undecided-days, "
-              "--max-overdue-decisions, --rights, or --require-evidence-for to "
-              "enforce a policy.")
+              "--max-overdue-decisions, --inventory, --rights, or "
+              "--require-evidence-for to enforce a policy.")
         return EXIT_OK
 
     for result in results:
@@ -146,6 +195,11 @@ def build_parser() -> argparse.ArgumentParser:
     summarize.add_argument("input", type=Path)
     summarize.add_argument("--as-of", type=date.fromisoformat, default=date.today())
     summarize.add_argument("--output", type=Path)
+    summarize.add_argument(
+        "--inventory",
+        type=Path,
+        help="JSON list of the AI systems the organization runs, held outside the register",
+    )
     summarize.set_defaults(handler=_summarize)
 
     compare = subparsers.add_parser("diff", help="compare two register snapshots and report what changed")
@@ -171,6 +225,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-overdue-decisions",
         type=int,
         help="maximum active decisions past the date they were required by",
+    )
+    check.add_argument(
+        "--inventory",
+        type=Path,
+        help="JSON list of the AI systems the organization runs, held outside the register",
     )
     check.add_argument(
         "--rights",

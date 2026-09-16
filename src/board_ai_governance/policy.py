@@ -4,7 +4,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
-from .register import Risk
+from .inventory import Inventory
+from .register import Portfolio, Risk
 
 LEVELS = ("low", "medium", "high", "critical")
 
@@ -57,6 +58,7 @@ class Policy:
     max_overdue_decisions: int | None = None
     require_evidence_for: frozenset[str] = field(default_factory=frozenset)
     rights: DecisionRights | None = None
+    inventory: Inventory | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -69,6 +71,7 @@ class Policy:
             self.max_overdue_decisions is not None,
             self.require_evidence_for,
             self.rights is not None,
+            self.inventory is not None,
         ))
 
 
@@ -219,6 +222,32 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
                 f"{risk.id} {risk.system} was due {risk.decision_due.isoformat()}, "
                 f"{risk.decision_overdue_days(as_of)} days ago ({risk.owner})"
                 for risk in matched
+            ),
+        ))
+
+    if policy.inventory is not None:
+        # A register cannot report what it is missing, so the estate is declared outside it.
+        coverage = Portfolio(as_of=as_of, risks=tuple(risks)).coverage(policy.inventory)
+        matched = coverage.blind_spots
+        noun = "system" if len(matched) == 1 else "systems"
+        detail = (
+            f"{len(matched)} material {noun} of {coverage.material_count} running without a "
+            "current entry"
+        )
+        if coverage.unlisted:
+            detail += f"; {len(coverage.unlisted)} recorded and not on the declared estate"
+        results.append(Result(
+            rule="coverage",
+            passed=not matched,
+            detail=detail,
+            subjects=tuple(
+                f"{system.name} ({system.owner or 'no owner recorded'}) "
+                + (
+                    "has no entry in the register"
+                    if system in coverage.unregistered
+                    else "has only closed entries, so nothing current is reported"
+                )
+                for system in matched
             ),
         ))
 

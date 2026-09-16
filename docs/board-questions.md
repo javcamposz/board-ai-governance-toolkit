@@ -26,6 +26,6 @@
 
 ## Portfolio Governance
 
-- Which material AI systems are missing from this view?
+- Which material AI systems are missing from this view? (`ai-board summarize --inventory` answers this against an estate declared outside the register.)
 - Are review depth and executive attention proportional to consequence and uncertainty?
 - What did incidents and near misses change in standards, evaluations, or investment?

@@ -85,6 +85,46 @@ is named as untestable rather than quietly passed, the same way risk age already
 A decision that disappears between snapshots is reported too. Neither is visible in a single
 snapshot, which is why both live in the change report.
 
+## Which Systems Are Missing From This View?
+
+[`docs/board-questions.md`](docs/board-questions.md) asks that first under portfolio governance. The
+dashboard told the board to challenge whether the register was complete and gave them nothing to
+challenge it with, because **a register cannot report what it is missing**: absence is the one thing
+it has no row for.
+
+So the estate is declared where the anchors and the decision rights are, outside the thing being
+audited. A register that also supplied the list of systems it should contain would supply the list it
+does contain.
+
+```json
+{"systems": [
+  {"name": "Marketing copy assistant", "tier": "material", "owner": "Chief Marketing Officer"},
+  {"name": "Meeting transcription", "tier": "routine", "owner": "Chief Operating Officer"}
+]}
+```
+
+```bash
+ai-board summarize examples/ai-risk-register.csv --as-of 2026-09-12 \
+  --inventory examples/ai-systems.json
+```
+
+| System | Tier | Accountable | Why it is not in view |
+|---|---|---|---|
+| Marketing copy assistant | material | Chief Marketing Officer | No entry in the register at all |
+| Fraud triage model | material | Chief Risk Officer | Its only entries are closed, so nothing current is reported |
+
+**A closed entry is the worse of the two.** The system is still running, the register looks as though
+it has been considered, and the board is told nothing current about it. Absence at least looks like
+absence.
+
+Only `material` systems are expected in the register, so proportionality is declared rather than
+argued after the fact. A system carrying an active risk that is not on the estate is reported too:
+either the estate is out of date or something is running unlisted. `ai-board check --inventory` fails
+on the same evidence.
+
+When nothing is missing the report says so and then tells the board where to look instead: that the
+register matches what it was given is not the same as the list of systems being right.
+
 ## Did The Right Authority Decide?
 
 [`docs/decision-rights.md`](docs/decision-rights.md) maps decisions to who may approve them, and was

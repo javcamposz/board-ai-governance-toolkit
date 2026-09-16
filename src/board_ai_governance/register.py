@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+from .inventory import Inventory, System
+
 REQUIRED_FIELDS = (
     "id",
     "system",
@@ -420,6 +422,39 @@ class Portfolio:
             key=lambda risk: (risk.decided_on, risk.id),
         ))
 
+    def coverage(self, inventory: Inventory) -> Coverage:
+        """Compare the estate against what the register actually carries.
+
+        A system whose only entries are closed is worse than an absent one in one respect:
+        the register looks like it has been considered, and the board is told nothing
+        current about a system that is still running.
+        """
+        active_systems = {risk.system.strip().casefold() for risk in self.active}
+        all_systems = {risk.system.strip().casefold() for risk in self.risks}
+
+        covered, unregistered, only_closed = [], [], []
+        for system in inventory.material:
+            key = system.name.strip().casefold()
+            if key in active_systems:
+                covered.append(system)
+            elif key in all_systems:
+                only_closed.append(system)
+            else:
+                unregistered.append(system)
+
+        listed = inventory.names()
+        unlisted = sorted({
+            risk.system for risk in self.active
+            if risk.system.strip().casefold() not in listed
+        })
+        return Coverage(
+            inventory=inventory,
+            covered=tuple(covered),
+            unregistered=tuple(unregistered),
+            only_closed=tuple(only_closed),
+            unlisted=tuple(unlisted),
+        )
+
     @property
     def records_no_assurance(self) -> bool:
         return bool(self.active) and not any(
@@ -432,6 +467,30 @@ class Portfolio:
             level: sum(risk.level == level for risk in self.active)
             for level in ("critical", "high", "medium", "low")
         }
+
+
+@dataclass(frozen=True)
+class Coverage:
+    """What the register holds about the estate, and what it is silent on."""
+
+    inventory: Inventory
+    covered: tuple[System, ...]
+    unregistered: tuple[System, ...]
+    only_closed: tuple[System, ...]
+    unlisted: tuple[str, ...]
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.unregistered and not self.only_closed
+
+    @property
+    def material_count(self) -> int:
+        return len(self.inventory.material)
+
+    @property
+    def blind_spots(self) -> tuple[System, ...]:
+        """Material systems the board has no current view of, for either reason."""
+        return self.unregistered + self.only_closed
 
 
 def _decision_state(risk: Risk, as_of: date) -> str:
@@ -452,7 +511,9 @@ def _decision_state(risk: Risk, as_of: date) -> str:
     return "Outstanding; no date recorded for when it was first required."
 
 
-def render_dashboard(risks: list[Risk], as_of: date) -> str:
+def render_dashboard(
+    risks: list[Risk], as_of: date, inventory: Inventory | None = None
+) -> str:
     portfolio = Portfolio(as_of=as_of, risks=tuple(risks))
     active = portfolio.active
     ranked = portfolio.ranked
@@ -608,6 +669,43 @@ def render_dashboard(risks: list[Risk], as_of: date) -> str:
         lines.extend(caveats)
     if not aged and not caveats:
         lines.append("- No active risk to age.")
+
+    if inventory is not None:
+        coverage = portfolio.coverage(inventory)
+        lines.extend(["", "## Systems Missing From This View", ""])
+        if coverage.is_complete:
+            lines.append(
+                f"- Every one of the {coverage.material_count} material systems on the "
+                "declared estate has an active entry. Challenge the estate rather than the "
+                "register: this says the register matches what it was given, not that the "
+                "list of systems is right."
+            )
+        else:
+            lines.append("| System | Tier | Accountable | Why it is not in view |")
+            lines.append("|---|---|---|---|")
+            for system in coverage.unregistered:
+                lines.append(
+                    f"| {system.name} | {system.tier} | {system.owner or 'not recorded'} | "
+                    "No entry in the register at all |"
+                )
+            for system in coverage.only_closed:
+                lines.append(
+                    f"| {system.name} | {system.tier} | {system.owner or 'not recorded'} | "
+                    "Its only entries are closed, so nothing current is reported |"
+                )
+            lines.append("")
+            lines.append(
+                f"{len(coverage.blind_spots)} of {coverage.material_count} material systems "
+                "are running without a current entry. A closed entry is the worse of the two: "
+                "the register looks considered and says nothing."
+            )
+        if coverage.unlisted:
+            lines.extend(["", "Recorded but not on the declared estate:", ""])
+            for system in coverage.unlisted:
+                lines.append(
+                    f"- **{system}** carries an active risk and is not on the estate. "
+                    "Either the estate is out of date or something is running unlisted."
+                )
 
     lines.extend([
         "",
