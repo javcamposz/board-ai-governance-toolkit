@@ -1,0 +1,10 @@
+{
+  "systems": [
+    {"name": "Customer support assistant", "tier": "material", "owner": "Customer Operations Director"},
+    {"name": "Recruitment ranking pilot", "tier": "material", "owner": "Chief People Officer"},
+    {"name": "Developer coding assistant", "tier": "material", "owner": "Chief Technology Officer"},
+    {"name": "Fraud triage model", "tier": "material", "owner": "Chief Risk Officer"},
+    {"name": "Marketing copy assistant", "tier": "material", "owner": "Chief Marketing Officer"},
+    {"name": "Meeting transcription", "tier": "routine", "owner": "Chief Operating Officer"}
+  ]
+}
