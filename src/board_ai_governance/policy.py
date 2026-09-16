@@ -230,15 +230,20 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
         coverage = Portfolio(as_of=as_of, risks=tuple(risks)).coverage(policy.inventory)
         matched = coverage.blind_spots
         noun = "system" if len(matched) == 1 else "systems"
-        detail = (
-            f"{len(matched)} material {noun} of {coverage.material_count} running without a "
-            "current entry"
-        )
+        if not coverage.material_count:
+            # A rule an empty declaration satisfies produces a green result for the absence
+            # of a claim. It fails instead, and says why.
+            detail = "the declared estate lists no material systems, so nothing was checked"
+        else:
+            detail = (
+                f"{len(matched)} material {noun} of {coverage.material_count} running without "
+                "a current entry"
+            )
         if coverage.unlisted:
             detail += f"; {len(coverage.unlisted)} recorded and not on the declared estate"
         results.append(Result(
             rule="coverage",
-            passed=not matched,
+            passed=bool(coverage.material_count) and not matched,
             detail=detail,
             subjects=tuple(
                 f"{system.name} ({system.owner or 'no owner recorded'}) "

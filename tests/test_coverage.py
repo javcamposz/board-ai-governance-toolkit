@@ -235,8 +235,72 @@ def test_a_non_json_estate_is_reported_cleanly(tmp_path, capsys):
     assert "not valid JSON" in capsys.readouterr().err
 
 
-def test_an_estate_with_no_material_systems_cannot_breach(tmp_path):
+def test_an_estate_with_no_material_systems_fails_rather_than_passes():
+    """A check an empty declaration satisfies produces a green result for no claim."""
     inventory = Inventory((System("Meeting transcription", "routine"),))
     results = evaluate(read_register(EXAMPLE), Policy(inventory=inventory), AS_OF)
 
-    assert breached(results) == []
+    assert breached(results) == results
+    assert results[0].detail.startswith(
+        "the declared estate lists no material systems, so nothing was checked"
+    )
+    # The evidence that the estate is wrong belongs on the same line as the failure.
+    assert "3 recorded and not on the declared estate" in results[0].detail
+
+
+def test_an_entirely_empty_estate_fails_too():
+    results = evaluate(read_register(EXAMPLE), Policy(inventory=Inventory(())), AS_OF)
+
+    assert breached(results) == results
+
+
+# --- what the review found ---
+
+def test_the_cli_refuses_an_estate_that_declares_nothing_material(tmp_path, capsys):
+    """The gate must not be satisfiable by emptying the file it checks."""
+    path = tmp_path / "systems.json"
+    path.write_text(json.dumps({"systems": []}))
+
+    assert main(["check", str(EXAMPLE), "--inventory", str(path)]) == 2
+    err = capsys.readouterr().err
+    assert "declares no material systems" in err
+    assert "would pass by declaring nothing" in err
+
+
+def test_the_cli_refuses_an_all_routine_estate(tmp_path, capsys):
+    path = tmp_path / "systems.json"
+    path.write_text(json.dumps({"systems": [{"name": "Transcription", "tier": "routine"}]}))
+
+    assert main(["summarize", str(EXAMPLE), "--inventory", str(path)]) == 2
+    assert "declares no material systems" in capsys.readouterr().err
+
+
+def test_the_dashboard_does_not_call_an_empty_estate_complete():
+    report = render_dashboard(read_register(EXAMPLE), AS_OF, Inventory(()))
+
+    assert "Every one of the 0" not in report
+    assert "lists no material systems, so nothing here says the register is complete" in report
+    assert "It says only that nothing was claimed." in report
+
+
+def test_a_tier_the_cli_would_reject_is_rejected_by_the_constructor_too():
+    """A tier the rule does not recognise silently removes a system from the check."""
+    from board_ai_governance.inventory import InventoryError
+
+    with pytest.raises(InventoryError, match="tier is 'materail'"):
+        Inventory.from_records([{"name": "Payments model", "tier": "materail"}])
+
+    with pytest.raises(InventoryError, match="tier is 'vital'"):
+        System("Payments model", "vital")
+
+
+def test_a_valid_tier_is_still_accepted_in_any_case():
+    inventory = Inventory.from_records([{"name": "A", "tier": " Material "}])
+
+    assert inventory.material[0].name == "A"
+    assert inventory.declares_material_systems
+
+
+def test_declares_material_systems_reads_the_tier_not_the_count():
+    assert not Inventory((System("A", "routine"),)).declares_material_systems
+    assert Inventory((System("A", "material"),)).declares_material_systems

@@ -125,6 +125,10 @@ on the same evidence.
 When nothing is missing the report says so and then tells the board where to look instead: that the
 register matches what it was given is not the same as the list of systems being right.
 
+An estate declaring no material systems is **refused**, by both commands. A completeness check that an
+empty declaration satisfies produces a green result for the absence of a claim, which is worse than
+producing none.
+
 ## Did The Right Authority Decide?
 
 [`docs/decision-rights.md`](docs/decision-rights.md) maps decisions to who may approve them, and was

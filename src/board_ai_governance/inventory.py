@@ -19,6 +19,10 @@ TIERS = ("material", "routine")
 MATERIAL = "material"
 
 
+class InventoryError(ValueError):
+    """A declared estate that cannot be used to check completeness."""
+
+
 @dataclass(frozen=True)
 class System:
     """One AI system the organization is running."""
@@ -26,6 +30,14 @@ class System:
     name: str
     tier: str
     owner: str = ""
+
+    def __post_init__(self) -> None:
+        # Validated here rather than only at the CLI, because a tier the constructor
+        # accepts and the rule does not recognise silently removes a system from the check.
+        if self.tier not in TIERS:
+            raise InventoryError(
+                f"{self.name or 'system'} tier is {self.tier!r}; the two are {', '.join(TIERS)}"
+            )
 
     @property
     def is_material(self) -> bool:
@@ -35,6 +47,15 @@ class System:
 @dataclass(frozen=True)
 class Inventory:
     systems: tuple[System, ...]
+
+    @property
+    def declares_material_systems(self) -> bool:
+        """An estate with nothing material in it cannot be checked against.
+
+        A completeness check an empty declaration satisfies produces a green result for the
+        absence of a claim, which is worse than producing none.
+        """
+        return bool(self.material)
 
     @classmethod
     def from_records(cls, records: Sequence[Mapping[str, object]]) -> Inventory:

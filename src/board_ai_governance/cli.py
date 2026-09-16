@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from .diff import diff_registers, render_diff
-from .inventory import TIERS, Inventory
+from .inventory import TIERS, Inventory, InventoryError
 from .policy import LEVELS, DecisionRights, Policy, breached, evaluate
 from .register import Portfolio, RegisterError, read_register, render_dashboard
 
@@ -86,7 +86,17 @@ def _read_inventory(path: Path | None) -> Inventory | None:
 
     if problems:
         raise RegisterError(path, problems)
-    return Inventory.from_records(value["systems"])
+    try:
+        inventory = Inventory.from_records(value["systems"])
+    except InventoryError as exc:
+        raise RegisterError(path, [str(exc)]) from exc
+    if not inventory.declares_material_systems:
+        raise RegisterError(path, [
+            "the estate declares no material systems, so a completeness check against it "
+            "would pass by declaring nothing; list the systems the register is expected to "
+            "cover, or omit --inventory"
+        ])
+    return inventory
 
 
 def _read_rights(path: Path | None) -> DecisionRights | None:

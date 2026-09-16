@@ -673,7 +673,12 @@ def render_dashboard(
     if inventory is not None:
         coverage = portfolio.coverage(inventory)
         lines.extend(["", "## Systems Missing From This View", ""])
-        if coverage.is_complete:
+        if not coverage.material_count:
+            lines.append(
+                "- The declared estate lists no material systems, so nothing here says the "
+                "register is complete. It says only that nothing was claimed."
+            )
+        elif coverage.is_complete:
             lines.append(
                 f"- Every one of the {coverage.material_count} material systems on the "
                 "declared estate has an active entry. Challenge the estate rather than the "
