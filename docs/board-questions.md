@@ -29,3 +29,10 @@
 - Which material AI systems are missing from this view? (`ai-board summarize --inventory` answers this against an estate declared outside the register.)
 - Are review depth and executive attention proportional to consequence and uncertainty?
 - What did incidents and near misses change in standards, evaluations, or investment?
+
+## Agents Acting On Our Behalf
+
+- Which agents act without a person approving each action, and on whose authority? (`ai-board agents` answers this against mandates declared outside the register.)
+- Has every accountable owner said what agents may do on their behalf, and does any agent hold more than the agent or person that created it?
+- For each acting agent, who would stop it tonight, when did they last prove they could, and does that stop reach every agent it spawned?
+- Which of our outstanding decisions has an agent's autonomy already answered?

@@ -5,7 +5,7 @@
 
 A lightweight, inspectable toolkit for turning board-level AI oversight into explicit decisions, owners, evidence, and review dates.
 
-It includes a risk-register schema, a deterministic dashboard generator, board questions, and decision-rights templates. The examples are fictional and designed to be adapted to an organization's existing governance.
+It includes a risk-register schema, a deterministic dashboard generator, board questions, decision-rights templates, and a mandate check for AI agents and agent swarms that act on the organization's behalf. The examples are fictional and designed to be adapted to an organization's existing governance.
 
 ## Generate A Board Summary
 
@@ -168,6 +168,55 @@ A level absent from the file is unconstrained, and the result says which levels 
 than letting silence read as approval. A level declaring an empty list is refused, because "nobody
 may decide" and "we have not said" should not look alike.
 
+## Agents Acting On The Organization's Behalf
+
+The register was built for systems that recommend and people that act. Agentic systems act, and
+spawn agents that act: a support orchestrator spawns a refund worker, a coding planner spawns workers,
+and one of those spawns a release agent. Each spawn is a delegation of authority, and the board is
+accountable for the end of the chain. [`docs/agent-mandates.md`](docs/agent-mandates.md) declares the
+agents and what each accountable owner has authorised them to do, outside the register for the reason
+the estate and the rights are.
+
+```bash
+ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --mandates examples/agent-mandates.json
+```
+
+```text
+FAIL  delegated authority: 2 agents hold authority their delegator did not; 1 could not be tested
+      because Chief Operating Officer declared no delegation
+        refund-worker holds refund:up_to_100, which support-orchestrator, the agent that spawned it,
+        does not. Authority does not grow through delegation: an agent cannot grant what it does not hold.
+        release-agent holds deploy:production, which coding-worker, the agent that spawned it, does
+        not. ... Chief Technology Officer has not authorised deploy:production either.
+FAIL  agent stop: 2 stop problems across 5 acting agents
+        release-agent: keeps running when coding-worker is stopped.
+        coding-planner: its stop, owned by Chief Technology Officer, was last tested 194 days ago,
+        against a declared 90-day limit, and coding-worker acts on the strength of that stop.
+FAIL  agent autonomy: 1 system has autonomous agents while a decision is outstanding
+        coding-planner, coding-worker, release-agent act without per-action approval on Developer
+        coding assistant, where AI-003 still asks the board to decide: Set the permitted autonomy
+        boundary. Autonomy granted before that decision is the decision, taken by default.
+FAIL  delegation depth: 1 agent is more than 2 hops from the person answerable for it
+        release-agent → coding-worker → coding-planner → Chief Technology Officer (3 hops)
+```
+
+Four rules, each the board's existing reasoning applied to agents:
+
+| Rule | The same reasoning, already in this toolkit |
+|---|---|
+| **Authority does not grow through delegation.** A sub-agent cannot hold a scope its parent does not, and a root agent cannot hold one its principal never authorised | A decision's authority does not carry upward to a higher risk level |
+| **Every acting agent can be stopped.** A named stop owner, a test inside the declared window, and a stop that reaches every agent spawned below | A review date that has passed is overdue, not pending |
+| **Autonomy waits for the decision.** An agent acting autonomously on a system whose decision is outstanding has answered it by default | A decision outstanding for several cycles is one the board has declined to take |
+| **A chain is accountable only as far as someone follows it.** Depth is declared, because how far a board will trace is a choice | Proportionality is declared rather than argued after the fact |
+
+The principal authorising a scope does not let a child skip its parent: the director authorised
+refunds, the orchestrator never held them, so it had nothing to pass on. A principal who has declared
+nothing is reported as untestable rather than passed, because unstated is not the same as unlimited. A
+declaration with no agents is refused, as an empty estate is.
+
+`ai-board agents` writes the same findings as a board report, with every agent's chain read from the
+agent up to the person it answers to, and the questions the board should ask.
+
 ## Enforce A Policy
 
 A register that reports a breach but never fails is a document, not a control. `ai-board check` tests a
@@ -217,7 +266,10 @@ error: register.csv: 3 problems
 
 - `examples/ai-risk-register.csv`: fictional worked example using the required schema
 - `examples/ai-risk-register-previous.csv`: the prior snapshot of the same register, for `ai-board diff`
+- `examples/agent-mandates.json`: fictional agents, the authority delegated to them, and their stops
 - `templates/ai-risk-register.csv`: clean starting register
+- `templates/agent-mandates.json`: starting declaration for `ai-board agents` and `check --mandates`
+- `docs/agent-mandates.md`: governing AI agents that act and spawn agents
 - `templates/decision-memo.md`: evidence and approval record for a material AI decision
 - `templates/quarterly-dashboard.md`: board reporting structure
 - `docs/board-questions.md`: questions that surface capability, control, and accountability gaps
@@ -300,6 +352,7 @@ pytest
 python -m board_ai_governance summarize examples/ai-risk-register.csv --as-of 2026-09-12
 python -m board_ai_governance diff examples/ai-risk-register-previous.csv examples/ai-risk-register.csv --as-of 2026-09-12
 python -m board_ai_governance check examples/ai-risk-register.csv --as-of 2026-09-12 --max-overdue 0
+python -m board_ai_governance agents examples/agent-mandates.json --register examples/ai-risk-register.csv --as-of 2026-09-12
 ruff check .
 ```
 

@@ -43,6 +43,13 @@ jobs:
           if ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-overdue-decisions 0; then
             echo 'expected a non-zero exit for an overdue decision' && exit 1
           fi
+      - run: ai-board agents examples/agent-mandates.json --register examples/ai-risk-register.csv --as-of 2026-09-12 --inventory examples/ai-systems.json --output agent-mandates.md
+      - run: ai-board agents templates/agent-mandates.json --register templates/ai-risk-register.csv --as-of 2026-09-12 --output /dev/null
+      - name: an agent holding authority its delegator did not must fail the gate
+        run: |
+          if ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --mandates examples/agent-mandates.json; then
+            echo 'expected a non-zero exit for authority grown through delegation' && exit 1
+          fi
       - name: check fails on a breached threshold
         run: |
           if ai-board check examples/ai-risk-register.csv --as-of 2026-09-12 --max-critical 0; then

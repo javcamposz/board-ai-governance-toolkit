@@ -8,6 +8,16 @@ from pathlib import Path
 
 from .diff import diff_registers, render_diff
 from .inventory import TIERS, Inventory, InventoryError
+from .mandates import (
+    MandateError,
+    Mandates,
+    escalations,
+    load_mandates,
+    premature_autonomy,
+    render_mandates,
+    stop_problems,
+    too_deep,
+)
 from .policy import LEVELS, DecisionRights, Policy, breached, evaluate
 from .register import Portfolio, RegisterError, read_register, render_dashboard
 
@@ -135,6 +145,40 @@ def _read_rights(path: Path | None) -> DecisionRights | None:
     return DecisionRights.from_mapping(by_level)
 
 
+def _read_mandates(path: Path | None) -> Mandates | None:
+    """Agent mandates are declared outside the register, like the estate and the rights."""
+    if path is None:
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RegisterError(path, [f"agent mandates are not valid JSON: {exc}"]) from exc
+    try:
+        return load_mandates(value)
+    except MandateError as exc:
+        raise RegisterError(path, exc.problems) from exc
+
+
+def _agents(args: argparse.Namespace) -> int:
+    risks = read_register(args.register)
+    mandates = _read_mandates(args.mandates)
+    inventory = _read_inventory(args.inventory)
+    _emit(render_mandates(mandates, risks, args.as_of, inventory), args.output)
+
+    acting = sum(agent.acts for agent in mandates.agents)
+    noun = "agent" if len(mandates.agents) == 1 else "agents"
+    print(f"Validated {len(mandates.agents)} {noun} against {len(risks)} AI risks")
+    print(f"Acting without per-action approval: {acting}")
+    print(f"Authority grown through delegation: {len(escalations(mandates))}")
+    print(f"Stop problems: {len(stop_problems(mandates, args.as_of))}")
+    print(f"Autonomy ahead of an outstanding decision: {len(premature_autonomy(mandates, risks))}")
+    if mandates.max_depth is not None:
+        print(f"Chains past {mandates.max_depth} hops: {len(too_deep(mandates))}")
+    if args.output:
+        print(f"Mandate report written to {args.output}")
+    return EXIT_OK
+
+
 def _levels(value: str) -> frozenset[str]:
     chosen = {level.strip().lower() for level in value.split(",") if level.strip()}
     if not chosen:
@@ -157,6 +201,7 @@ def _check(args: argparse.Namespace) -> int:
         require_evidence_for=args.require_evidence_for or frozenset(),
         rights=_read_rights(args.rights),
         inventory=_read_inventory(args.inventory),
+        mandates=_read_mandates(args.mandates),
     )
     results = evaluate(risks, policy, args.as_of)
 
@@ -164,7 +209,7 @@ def _check(args: argparse.Namespace) -> int:
     if policy.is_empty:
         print("No thresholds were set, so nothing was tested. Pass --max-critical, --max-high, "
               "--max-overdue, --max-open-days, --max-undecided-days, "
-              "--max-overdue-decisions, --inventory, --rights, or "
+              "--max-overdue-decisions, --inventory, --rights, --mandates, or "
               "--require-evidence-for to enforce a policy.")
         return EXIT_OK
 
@@ -247,12 +292,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="JSON file of level to the roles that may decide at it, held outside the register",
     )
     check.add_argument(
+        "--mandates",
+        type=Path,
+        help="JSON declaration of AI agents and the authority delegated to them, held outside the register",
+    )
+    check.add_argument(
         "--require-evidence-for",
         type=_levels,
         metavar="LEVELS",
         help="comma-separated levels that must record evidence, for example high,critical",
     )
     check.set_defaults(handler=_check)
+
+    agents = subparsers.add_parser(
+        "agents", help="report the authority delegated to AI agents and where it does not hold"
+    )
+    agents.add_argument("mandates", type=Path, help="JSON declaration of agents and delegations")
+    agents.add_argument("--register", type=Path, required=True, help="the AI risk register")
+    agents.add_argument("--as-of", type=date.fromisoformat, default=date.today())
+    agents.add_argument("--inventory", type=Path, help="the declared estate of AI systems")
+    agents.add_argument("--output", type=Path)
+    agents.set_defaults(handler=_agents)
 
     return parser
 

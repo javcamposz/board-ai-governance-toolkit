@@ -28,3 +28,10 @@ The file is held outside the register, because a register that named its own acc
 would name the ones who had already decided. Matching is on the `decided_by` text, trimmed and
 case-insensitive, so the roles here and the roles in the register must be written the same way.
 A level left out of the file is unconstrained and the check says so.
+
+## Rights Delegated To Agents
+
+An agent acting on a person's behalf is exercising that person's authority, so the same rule
+applies down a chain of agents as up a chain of risk levels: authority does not grow by being
+passed on. [Agent mandates](agent-mandates.md) declares what each owner has authorised agents to do,
+and `ai-board check --mandates` fails a sub-agent holding a scope the agent that spawned it does not.

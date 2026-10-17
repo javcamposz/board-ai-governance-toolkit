@@ -1,0 +1,22 @@
+{
+  "principals": {
+    "Accountable Owner Role": [
+      "read:example_scope"
+    ]
+  },
+  "max_depth": 2,
+  "stop_test_within_days": 90,
+  "agents": [
+    {
+      "name": "example-agent",
+      "system": "System name as listed in the estate",
+      "acts_for": "Accountable Owner Role",
+      "scopes": [
+        "read:example_scope"
+      ],
+      "autonomy": "suggest",
+      "stop_owner": "Accountable Owner Role",
+      "stop_tested_on": "2026-01-01"
+    }
+  ]
+}

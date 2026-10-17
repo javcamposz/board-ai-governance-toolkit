@@ -1,0 +1,63 @@
+{
+  "principals": {
+    "Customer Operations Director": ["read:customer_record", "reply:customer", "refund:up_to_100"],
+    "Chief Technology Officer": ["read:source", "write:branch", "open:pull_request", "deploy:staging"]
+  },
+  "max_depth": 2,
+  "stop_test_within_days": 90,
+  "agents": [
+    {
+      "name": "support-orchestrator",
+      "system": "Customer support assistant",
+      "acts_for": "Customer Operations Director",
+      "scopes": ["read:customer_record", "reply:customer"],
+      "autonomy": "act",
+      "stop_owner": "Customer Operations Director",
+      "stop_tested_on": "2026-08-20"
+    },
+    {
+      "name": "refund-worker",
+      "spawned_by": "support-orchestrator",
+      "scopes": ["read:customer_record", "refund:up_to_100"],
+      "autonomy": "act",
+      "stops_with_parent": true
+    },
+    {
+      "name": "coding-planner",
+      "system": "Developer coding assistant",
+      "acts_for": "Chief Technology Officer",
+      "scopes": ["read:source", "write:branch", "open:pull_request"],
+      "autonomy": "act",
+      "stop_owner": "Chief Technology Officer",
+      "stop_tested_on": "2026-03-02"
+    },
+    {
+      "name": "coding-worker",
+      "spawned_by": "coding-planner",
+      "scopes": ["read:source", "write:branch"],
+      "autonomy": "act",
+      "stops_with_parent": true
+    },
+    {
+      "name": "code-reviewer",
+      "spawned_by": "coding-planner",
+      "scopes": ["read:source"],
+      "autonomy": "suggest",
+      "stops_with_parent": true
+    },
+    {
+      "name": "release-agent",
+      "spawned_by": "coding-worker",
+      "scopes": ["read:source", "deploy:production"],
+      "autonomy": "act",
+      "stops_with_parent": false
+    },
+    {
+      "name": "meeting-notes",
+      "system": "Meeting transcription",
+      "acts_for": "Chief Operating Officer",
+      "scopes": ["read:calendar", "read:meeting_audio"],
+      "autonomy": "suggest"
+    }
+  ]
+}

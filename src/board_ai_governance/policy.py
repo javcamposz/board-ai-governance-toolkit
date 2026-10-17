@@ -5,6 +5,16 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from .inventory import Inventory
+from .mandates import (
+    Mandates,
+    escalations,
+    off_estate,
+    premature_autonomy,
+    stop_problems,
+    too_deep,
+    undeclared_principals,
+    ungoverned_systems,
+)
 from .register import Portfolio, Risk
 
 LEVELS = ("low", "medium", "high", "critical")
@@ -59,6 +69,7 @@ class Policy:
     require_evidence_for: frozenset[str] = field(default_factory=frozenset)
     rights: DecisionRights | None = None
     inventory: Inventory | None = None
+    mandates: Mandates | None = None
 
     @property
     def is_empty(self) -> bool:
@@ -72,6 +83,7 @@ class Policy:
             self.require_evidence_for,
             self.rights is not None,
             self.inventory is not None,
+            self.mandates is not None,
         ))
 
 
@@ -300,6 +312,86 @@ def evaluate(risks: list[Risk], policy: Policy, as_of: date) -> list[Result]:
             subjects=tuple(
                 f"{risk.id} {risk.system} ({_level_note(risk)}, assurance {_assurance_note(risk)})"
                 for risk in matched
+            ),
+        ))
+
+    if policy.mandates is not None:
+        results.extend(_mandate_results(policy.mandates, risks, as_of, policy.inventory))
+
+    return results
+
+
+def _mandate_results(
+    mandates: Mandates, risks: list[Risk], as_of: date, inventory: Inventory | None
+) -> list[Result]:
+    """What agents acting on the organization's behalf were authorised to do, and did."""
+    results: list[Result] = []
+
+    grown = escalations(mandates)
+    undeclared = undeclared_principals(mandates)
+    detail = f"{len(grown)} {'agent holds' if len(grown) == 1 else 'agents hold'} authority " \
+             "their delegator did not"
+    if undeclared:
+        untested = sum(len(agents) for _, agents in undeclared)
+        detail += (
+            f"; {untested} could not be tested because "
+            f"{', '.join(name for name, _ in undeclared)} declared no delegation"
+        )
+    results.append(Result(
+        rule="delegated authority",
+        passed=not grown,
+        detail=detail,
+        subjects=tuple(item.describe(mandates) for item in grown),
+    ))
+
+    stops = stop_problems(mandates, as_of)
+    acting = sum(agent.acts for agent in mandates.agents)
+    results.append(Result(
+        rule="agent stop",
+        passed=not stops,
+        detail=f"{len(stops)} stop {'problem' if len(stops) == 1 else 'problems'} across "
+               f"{acting} acting agents"
+               + ("" if mandates.stop_test_within_days else "; no test window declared"),
+        subjects=tuple(item.describe() for item in stops),
+    ))
+
+    early = premature_autonomy(mandates, risks)
+    ungoverned = ungoverned_systems(mandates, risks)
+    detail = (
+        f"{len(early)} {'system has' if len(early) == 1 else 'systems have'} autonomous agents "
+        "while a decision is outstanding"
+    )
+    if ungoverned:
+        detail += f"; {len(ungoverned)} with autonomous agents and no active register entry"
+    results.append(Result(
+        rule="agent autonomy",
+        passed=not early and not ungoverned,
+        detail=detail,
+        subjects=tuple(item.describe() for item in early) + tuple(
+            f"{system} has autonomous agents and no active register entry"
+            for system in ungoverned
+        ),
+    ))
+
+    if mandates.max_depth is not None:
+        deep = too_deep(mandates)
+        results.append(Result(
+            rule="delegation depth",
+            passed=not deep,
+            detail=f"{len(deep)} {'agent is' if len(deep) == 1 else 'agents are'} more than "
+                   f"{mandates.max_depth} hops from the person answerable for it",
+            subjects=tuple(f"{mandates.answers_to(agent)} ({depth} hops)" for agent, depth in deep),
+        ))
+
+    if inventory is not None:
+        outside = off_estate(mandates, inventory)
+        count = sum(len(agents) for _, agents in outside)
+        results.append(Result(
+            rule="agents on the estate",
+            passed=not outside,
+            detail=f"{count} {'agent runs' if count == 1 else 'agents run'} in systems not on the declared estate",
+            subjects=tuple(
+                f"{', '.join(agent.name for agent in agents)} in {system}" for system, agents in outside
             ),
         ))
 
